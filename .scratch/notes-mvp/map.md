@@ -43,6 +43,11 @@ Firestore was Badrish's call, taken with the last-write-wins caveat stated: Fire
 queue replays writes unconditionally on reconnect, which by default discards the losing edit. That
 tension is ticket 02, not a settled matter.
 
+**Architecture**: with 01–05 closed, the application architecture lives at
+[architecture.md](architecture.md) — module boundaries, the ports that make ticket 02's mechanism
+testable without Firebase, and the build order. Proposed by `designer`, open for the `builder`'s
+response in the file itself.
+
 ## Decisions so far
 
 <!-- one line per closed ticket: gist of the answer, then the link to the detail -->
