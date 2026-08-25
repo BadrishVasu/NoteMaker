@@ -57,6 +57,20 @@ tension is ticket 02, not a settled matter.
   Rules validate ownership **and** document shape, tested against the emulator with
   `@firebase/rules-unit-testing`. Composite indexes deferred to ticket 03 — a fully mirrored local
   corpus needs none. A `<version>` field is reserved for ticket 02 to name.
+- [02 · Conflict-copy mechanism under Firestore's offline queue](../issues/02-conflict-copy-mechanism.md):
+  The SDK's offline queue is **never used for Note writes** — every write goes through
+  `runTransaction`, which rejects offline instead of queueing, making unconditional replay
+  structurally impossible. Edits live in our own **Outbox** until reconnect, where one transaction
+  compares the server's `rev` against the **Fork point**; equal means a clean push, otherwise the
+  server's version survives untouched and our content is written as a Conflict copy. `rev` is an
+  **opaque token, not a counter** — a counter fabricates conflicts on retry. The copy carries
+  `conflictOf` and `conflictBase` (the fork-point content, the one provision that cannot be
+  retrofitted), inherits its title unmarked, and takes a deterministic id so retries coalesce.
+  Nothing in the mechanism reads a clock, so **ticket 01's skew debt is dissolved, not paid**.
+  Verified by model-checking 2.4M two-device interleavings, which caught a live data-loss bug in the
+  fork-point advance rule. Consequences: **ticket 03 is largely forced** (one own mirror, Firestore
+  on memory-only cache as pure network transport), and the interactive merge Badrish asked for
+  becomes ticket 11 rather than a step in the sync path.
 - [04 · Provisioning](../issues/04-provision-accounts.md): Firebase project `notemaker-claude`
   (Firestore **Standard** edition), auth domain `notemaker-claude.firebaseapp.com`, app deploying to
   `https://note-maker-f41.pages.dev/`. Google provider enabled and the `pages.dev` host added to
@@ -81,7 +95,6 @@ tension is ticket 02, not a settled matter.
 ## Not yet specified
 
 - Note list ordering, and whether pinning exists at all
-- What a Conflict copy looks like in the UI — how the user notices one and reconciles it
 - Whether the 30-day Trash purge runs client-side on open, or needs a scheduled Cloud Function
 - Behaviour at large Note counts: when client-side search and a full local mirror stop being viable
 - First-run experience: what a brand-new account sees before it has any Notes

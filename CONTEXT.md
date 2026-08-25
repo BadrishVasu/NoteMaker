@@ -25,10 +25,16 @@ The view listing Notes that carry a Tombstone but have not yet been purged. A No
 still recoverable; a purged Note is not.
 _Avoid_: Bin, archive, recycle
 
-**Sync watermark**:
-The point in time up to which a device has already observed changes, used to decide what still
-needs to be pulled.
-_Avoid_: Cursor, checkpoint, last sync, offset
+**Outbox**:
+The set of Notes a device has changed but not yet successfully pushed. A Note sits in the Outbox
+from the moment it is edited until the server has accepted that exact edit.
+_Avoid_: Queue, pending writes, dirty list, drafts
+
+**Fork point**:
+The version of a Note that a device's unpushed edit was made on top of. Comparing the fork point
+against what the server currently holds is what tells a device whether anyone else changed the Note
+while it was away.
+_Avoid_: Base, ancestor, last known, baseline
 
 **App shell**:
 The part of the application that is cached ahead of time and rendered before any Note data is
