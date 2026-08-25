@@ -2,6 +2,84 @@
 
 Newest entry first. Append only.
 
+## 2026-08-25 — session close: 02/03/05 closed, architecture drafted, org stood up
+**Worked:** claude, mathematician, designer, ui-ux, builder, overseer
+**Moved:**
+- This session opened as a `wayfinder` session scoped to ticket 02 and ran well past that scope —
+  Badrish named it explicitly on closing. It ends with **02, 03, and 05 all closed**, an application
+  architecture drafted and under Builder review at `.scratch/notes-mvp/architecture.md`, and the org
+  standing itself up as a working unit for the first time: Designer, Builder, UI/UX, Mathematician
+  and Overseer all ran this session, several concurrently, coordinating through the repo rather than
+  through Claude.
+- **Ticket 02's mechanism carries a same-session amendment**: a manual-send setting (Badrish's
+  request) looked like it could widen the snapshot-overwrite guard; the Mathematician traced the
+  actual failure, found it lived in one candidate implementation rather than the concept, and fixed
+  it by minting `pendingRev` at edit-time unconditionally in both modes — no change to the guard, no
+  re-verification needed beyond a schedule-subset argument. Written into 02's ticket as an amendment,
+  not a rewrite.
+- **Ticket 12 created** (Android back-button), graduated from 05's fog.
+- **The Overseer ran an unprompted direction check** with no code yet written — the cheapest possible
+  moment for it — and found the thinking sound but the sequence off: ticket 10 (deploy) has sat open
+  and unblocked since ticket 04 closed, with nothing shipped. The Builder and the architecture
+  converged on the same conclusion independently. Three findings landed on ticket 10: it now owns
+  the service-worker update-mode choice (previously unowned), and it carries the deploy-first
+  argument.
+- **The Builder's readiness pass surfaced three defects the tickets hadn't covered**: ticket 01's
+  security rules predate 02's Conflict-copy fields and will reject every one of them; a Conflict
+  copy carries two bodies in one document, halving the effective size-cap warning ticket 05 set at
+  1 MB; and nothing in the design triggers a retry after a failed push, since network detection was
+  deliberately deleted — proposed fix is treating a delivered snapshot as proof of connectivity.
+  None of these are fixed yet; they're findings for whoever picks up the architecture next.
+- New feature files: `conflict-sync.md`, `sync-engine.md`, `editor-and-shell.md` (superseding the
+  provisional one from mid-session), `local-store.md`. New notebooks for builder, designer,
+  mathematician, overseer, ui-ux.
+- Nothing has been committed since `57e6855`. Everything above is on disk, uncommitted.
+
+**Open — three decisions Badrish is answering in a fresh session:**
+1. Service-worker update mode, `autoUpdate` vs `prompt` — Builder recommends `prompt`.
+2. The manual-send setting's shape — the Mathematician's fix means Badrish's original request (a
+   mode, not a button) is back on the table at no extra cost; Builder's earlier `Push now`-button
+   alternative was proposed before that fix existed.
+3. Whether the 30-day Trash purge ships in v1 — Builder recommends deferring it to its own ticket.
+
+Also open, not blocking: three questions the Designer put to Badrish in `architecture.md` await the
+Builder's or Badrish's answer, and the architecture itself awaits a final pass once those close.
+
+**Badrish:** closed this session on the note that the agent org should work as a unit going
+forward, with Claude and himself as a review layer rather than doing the work in parallel — see the
+pinned memory. Answers to the three questions above are coming in a new session.
+
+## 2026-08-25 — tickets 03 and 05 resolved by the org
+**Worked:** designer, ui-ux, claude
+**Moved:**
+- **03 closed** by the Designer. Ratified 02's forced conclusion — one own mirror as source of
+  truth, Firestore on `memoryLocalCache()` as pure network transport — but **corrected 02's stated
+  reason for it**: nothing reads the SDK cache, so the two stores could never visibly disagree. The
+  real reasons are a second copy of the corpus on disk, blast radius, and no multi-tab cache
+  coordination. Store is `idb`, not Dexie; whole corpus in memory, so **ticket 01's index deferral
+  closes with no composite index needed**. Outbox is a column (`pendingRev !== null`), not a table.
+  `navigator.storage.persist()` is mandatory. Accepted price: full corpus re-read per app open, with
+  the `updatedAt` watermark fix rejected as the clock-skew data-loss trap 02 cut.
+- **05 closed** by UI/UX, with a throwaway prototype at
+  `.scratch/notes-mvp/prototypes/05-shell/index.html`. The finding that reshaped it: **the app
+  cannot honestly say it is offline**, because 02 removed network detection on purpose. Every sync
+  affordance is Outbox state about a *Note*, never a network claim. Master-detail shell, markdown as
+  source in a textarea with a Write/Read toggle, no explicit save but mandatory flush on `blur`,
+  `visibilitychange` and `pagehide`.
+- **Ticket 12 created** — Android back-button and history behaviour, graduated from the fog by 05.
+  Share-target intent stays in the fog.
+- UI/UX was killed mid-task by a usage limit and **resumed with its context intact** rather than
+  restarted; only the final writing was lost. Worth knowing that resume works.
+
+**Open:** frontier is **06**, **09**, **10**, **11**, **12**. Designer takes the overall architecture
+now that 01–03 are closed; Builder leads implementation after that.
+**Badrish:** set the standing rule that the agent team is an organisation that should pick up and
+build from the first prompt — he and Claude work the basic plan only, and agents take specifics to
+him directly rather than having Claude pre-analyse and hand over a pre-digested brief. **Four
+questions are open to him**: sign-out wiping the device, `storage.persist()` returning false,
+split-pane preview vs the Write/Read toggle, and whether the `N notes waiting to sync` strip earns
+its space.
+
 ## 2026-08-25 — ticket 02 resolved: the conflict-copy mechanism
 **Worked:** claude, mathematician
 **Moved:**
