@@ -123,3 +123,19 @@ needed:
 - `http://localhost:4173/*` — **preview server**, which is the one that matters for PWA work, since
   service workers do not activate in the dev server. Omitting it makes the first local PWA test fail
   with a 403 that looks like a service-worker bug rather than a key restriction.
+
+**Read the status code carefully — 400 is not 403.**
+
+| Code | Meaning |
+|---|---|
+| `200` | Origin is on the Website restrictions list. |
+| `403` | Origin is genuinely blocked. `Requests from referer <origin> are blocked`. |
+| `400` | `API key not valid` — **the key never reached the referrer check**. Says nothing at all about the restriction. |
+
+A malformed key returns `400` for *every* origin. Any script that treats "not 200" as "blocked"
+will then report a tidy column of blocked results, including for the negative-control origin, and a
+completely unverified key looks secure. Assert against the expected code per origin instead of
+testing for `-ne 200`.
+
+Common cause on Windows: interpolating the key into a **single-quoted** PowerShell string, which
+sends the literal text `$key` as the API key.
