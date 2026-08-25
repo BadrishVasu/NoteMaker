@@ -71,6 +71,22 @@ tension is ticket 02, not a settled matter.
   fork-point advance rule. Consequences: **ticket 03 is largely forced** (one own mirror, Firestore
   on memory-only cache as pure network transport), and the interactive merge Badrish asked for
   becomes ticket 11 rather than a step in the sync path.
+- [03 · Local store](../issues/03-local-store-choice.md): **One own mirror is the source of truth**;
+  Firestore runs `memoryLocalCache()` explicitly and is pure network transport. 02's conclusion
+  ratified but its reasoning corrected — the two stores would never visibly disagree, since nothing
+  reads the SDK cache; the real reasons are a needless second copy of the corpus on disk, bounding a
+  stray `setDoc`'s blast radius to the tab, and no multi-tab cache coordination. Store is **`idb`,
+  not Dexie** — a single `notes` object store keyed by `noteId` in a per-uid database, with the
+  **whole corpus held in memory**, so every list, Trash, search and Outbox read is an array pass and
+  **no composite index is needed (closing ticket 01's deferral)**. The **Outbox is a column, not a
+  table**: `pendingRev !== null` is dirty, keeping "edit and enter the Outbox" one atomic row write.
+  First load uses an `initialSyncCompletedAt` flag so a downloading new device is never mistaken for
+  an empty account. Cross-tab coherence is **BroadcastChannel invalidation, no leader election**;
+  the accepted gap is that one Note typed in two tabs is last-save-wins with no Conflict copy.
+  **`navigator.storage.persist()` is mandatory** — unpushed Outbox edits exist only in the mirror,
+  so eviction is silent loss. Accepted price: no persisted resume token means a full corpus re-read
+  per app open; the `updatedAt` watermark that would fix it is rejected as the clock-skew data-loss
+  trap 02 cut. Tripwire at ~2,000 Notes / ~20 MB.
 - [04 · Provisioning](../issues/04-provision-accounts.md): Firebase project `notemaker-claude`
   (Firestore **Standard** edition), auth domain `notemaker-claude.firebaseapp.com`, app deploying to
   `https://note-maker-f41.pages.dev/`. Google provider enabled and the `pages.dev` host added to
