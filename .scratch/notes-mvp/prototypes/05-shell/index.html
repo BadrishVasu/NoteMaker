@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<!--
+  THROWAWAY PROTOTYPE — ticket 05, editor and app-shell UX.
+  Not production code. No tests, no error handling, no build step. Double-click to open.
+
+  Question: three structurally different shells for NoteMaker, switchable via ?variant=A|B|C
+  and the floating bar at the bottom. Scenario buttons drive the states that are hard to
+  imagine on paper: cold start, empty account, a Note waiting in the Outbox, the
+  conflict-copy editor redirect, and Trash.
+
+  Data is in memory only. Nothing here talks to Firebase.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NoteMaker shell prototype — ticket 05</title>
+<style>
+  :root {
+    --bg: #fbfbfa; --panel: #fff; --line: #e5e3df; --ink: #23211e; --dim: #8a857d;
+    --accent: #2f6f4e; --warn: #9a6b16; --warnbg: #fdf6e6; --sel: #eef2ef;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font: 15px/1.5 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: var(--ink); background: var(--bg);
+  }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  input, textarea { font: inherit; color: inherit; }
+
+  /* ---- device frame (prototype scaffolding, not part of the design) ---- */
+  #stage { height: 100%; display: flex; align-items: stretch; justify-content: center; }
+  #stage.phone { padding: 18px 0 84px; }
+  #app {
+    width: 100%; height: 100%; background: var(--panel); position: relative;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  #stage.phone #app {
+    width: 390px; height: 780px; max-height: 100%;
+    border: 10px solid #16150f; border-radius: 34px; box-shadow: 0 18px 50px rgba(0,0,0,.28);
+  }
+
+  /* ---- shared chrome ---- */
+  .bar {
+    display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+    border-bottom: 1px solid var(--line); background: var(--panel);
+    flex: 0 0 auto; min-height: 52px;
+  }
+  .bar .grow { flex: 1 1 auto; min-width: 0; }
+  .iconbtn {
+    background: none; border: 1px solid transparent; border-radius: 8px;
+    padding: 6px 9px; line-height: 1;
+  }
+  .iconbtn:hover { background: var(--sel); }
+  .primary {
+    background: var(--accent); color: #fff; border: none; border-radius: 8px;
+    padding: 8px 14px; font-weight: 600;
+  }
+  .search {
+    width: 100%; border: 1px solid var(--line); border-radius: 999px;
+    padding: 8px 14px; background: var(--bg); outline: none;
+  }
+  .search:focus { border-color: var(--accent); background: #fff; }
+
+  /* ---- list ---- */
+  .listwrap { flex: 1 1 auto; overflow-y: auto; }
+  .row {
+    display: block; width: 100%; text-align: left; background: none; border: none;
+    border-bottom: 1px solid var(--line); padding: 12px 14px;
+  }
+  .row:hover { background: var(--sel); }
+  .row.active { background: var(--sel); box-shadow: inset 3px 0 0 var(--accent); }
+  .row .t { display: flex; align-items: baseline; gap: 6px; }
+  .row .title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .title.default { font-weight: 500; color: var(--dim); font-style: italic; }
+  .row .snip { color: var(--dim); font-size: 13.5px; margin-top: 2px;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .row .meta { color: var(--dim); font-size: 12px; margin-top: 4px; display: flex; gap: 8px; align-items: center; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--warn); flex: 0 0 auto; }
+  .slot11 {
+    font-size: 11px; border: 1px dashed #c9b9a0; color: #96825f; border-radius: 4px;
+    padding: 0 5px; letter-spacing: .02em;
+  }
+
+  /* ---- editor ---- */
+  .editor { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+  .titleinput {
+    width: 100%; border: none; outline: none; padding: 18px 18px 4px;
+    font-size: 22px; font-weight: 700; background: none;
+  }
+  .titleinput::placeholder { color: var(--dim); font-weight: 500; font-style: italic; opacity: 1; }
+  .titlehint { padding: 0 18px 8px; font-size: 12.5px; color: var(--dim); }
+  .body {
+    flex: 1 1 auto; width: 100%; border: none; outline: none; resize: none;
+    padding: 8px 18px 24px; font: 15px/1.65 ui-monospace, "Cascadia Code", Menlo, monospace;
+    background: none; min-height: 0;
+  }
+  .preview { flex: 1 1 auto; overflow-y: auto; padding: 8px 18px 24px; }
+  .preview h1 { font-size: 22px; margin: 14px 0 6px; }
+  .preview h2 { font-size: 18px; margin: 14px 0 6px; }
+  .preview li { margin: 2px 0; }
+  .preview code { background: var(--sel); padding: 1px 4px; border-radius: 4px; }
+  .split { display: flex; flex: 1 1 auto; min-height: 0; }
+  .split .body { border-right: 1px solid var(--line); }
+  .split .preview { flex: 1 1 50%; }
+
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button { background: none; border: none; padding: 6px 12px; font-size: 13px; }
+  .seg button[aria-pressed="true"] { background: var(--sel); font-weight: 600; }
+
+  .status { font-size: 12.5px; color: var(--dim); white-space: nowrap; }
+  .status.pending { color: var(--warn); }
+
+  .banner {
+    display: flex; gap: 10px; align-items: flex-start; padding: 10px 14px;
+    background: var(--warnbg); border-bottom: 1px solid #ecdcb8; font-size: 13.5px;
+  }
+  .banner .grow { flex: 1; }
+  .banner button.link { background: none; border: none; text-decoration: underline; padding: 0; font-weight: 600; }
+  .strip {
+    padding: 7px 14px; background: var(--warnbg); border-top: 1px solid #ecdcb8;
+    font-size: 12.5px; color: var(--warn); flex: 0 0 auto;
+  }
+
+  .empty { padding: 48px 28px; text-align: center; color: var(--dim); }
+  .empty h3 { color: var(--ink); margin: 0 0 6px; font-size: 17px; }
+  .empty p { margin: 0 0 18px; }
+  .skel { padding: 14px; }
+  .skel div { height: 12px; background: #eeece8; border-radius: 6px; margin: 9px 0; }
+
+  .fab {
+    position: absolute; right: 18px; bottom: 18px; width: 56px; height: 56px;
+    border-radius: 50%; background: var(--accent); color: #fff; border: none;
+    font-size: 28px; line-height: 1; box-shadow: 0 6px 18px rgba(0,0,0,.22);
+  }
+
+  .menu {
+    position: absolute; right: 10px; top: 50px; background: #fff; border: 1px solid var(--line);
+    border-radius: 10px; box-shadow: 0 10px 28px rgba(0,0,0,.14); z-index: 20; min-width: 190px;
+    padding: 5px;
+  }
+  .menu button { display: block; width: 100%; text-align: left; background: none; border: none;
+    padding: 9px 12px; border-radius: 7px; font-size: 14px; }
+  .menu button:hover { background: var(--sel); }
+
+  /* variant B drawer */
+  .scrim { position: absolute; inset: 0; background: rgba(0,0,0,.28); z-index: 15; }
+  .drawer {
+    position: absolute; left: 0; top: 0; bottom: 0; width: min(360px, 88%); z-index: 16;
+    background: var(--panel); border-right: 1px solid var(--line);
+    display: flex; flex-direction: column; box-shadow: 6px 0 26px rgba(0,0,0,.16);
+  }
+
+  /* desktop two-pane for variant A */
+  .twopane { display: flex; flex: 1 1 auto; min-height: 0; }
+  .twopane > .pane-list { width: 340px; flex: 0 0 340px; border-right: 1px solid var(--line);
+    display: flex; flex-direction: column; min-height: 0; }
+  .twopane > .pane-ed { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+
+  /* ---- prototype-only bar ---- */
+  #proto {
+    position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 999;
+    display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: center;
+    background: #16150f; color: #fff; border-radius: 999px; padding: 7px 10px;
+    box-shadow: 0 8px 26px rgba(0,0,0,.34); font-size: 12.5px; max-width: 96vw;
+  }
+  #proto button {
+    background: #2e2c24; border: none; color: #fff; border-radius: 999px; padding: 5px 11px; font-size: 12.5px;
+  }
+  #proto button:hover { background: #454236; }
+  #proto .vlabel { font-weight: 700; padding: 0 8px; }
+  #proto .sep { width: 1px; height: 18px; background: #454236; margin: 0 4px; }
+</style>
+</head>
+<body>
+<div id="stage"><div id="app"></div></div>
+<div id="proto"></div>
+
+<script>
+/* =======================================================================
+   Throwaway state. In-memory only.
+   ======================================================================= */
+const now = Date.now();
+const mk = (o) => Object.assign({
+  id: Math.random().toString(36).slice(2, 10),
+  title: '', titleIsCustom: false, body: '', createdAt: now, updatedAt: now,
+  deletedAt: null, pending: false, conflictOf: null
+}, o);
+
+function seedNotes() {
+  return [
+    mk({ id: 'n1', body: '# Standing desk research\n\nHeight range matters more than motor count.\n- Uplift v2 — 24.5" to 50"\n- Jarvis — needs the tall base\n\nCheck warranty length before ordering.', updatedAt: now - 4 * 60e3 }),
+    mk({ id: 'n2', title: 'Groceries', titleIsCustom: true, body: '- oat milk\n- chilli oil\n- rice, 5kg\n- coriander', updatedAt: now - 55 * 60e3 }),
+    mk({ id: 'n3', body: 'Call the landlord about the boiler service — he said before the 12th.', updatedAt: now - 3 * 3600e3 }),
+    mk({ id: 'n4', body: '', updatedAt: now - 26 * 3600e3 }),           // Default title
+    mk({ id: 'n5', body: '## Trip packing\n\npassport, charger, the small tripod\n\n`no liquids over 100ml`', updatedAt: now - 2 * 86400e3 }),
+    mk({ id: 'n6', title: 'Ideas', titleIsCustom: true, body: 'A notes app that never loses a word.', updatedAt: now - 5 * 86400e3, deletedAt: now - 2 * 86400e3 })
+  ];
+}
+
+const S = {
+  variant: new URLSearchParams(location.search).get('variant') || 'A',
+  phone: (new URLSearchParams(location.search).get('phone') || '1') === '1',
+  notes: seedNotes(),
+  openId: null,        // null = list screen (on phone / variant C)
+  view: 'notes',       // notes | trash
+  mode: 'write',       // write | read  (variant A desktop can also be 'split')
+  query: '',
+  menu: false,
+  drawer: false,
+  scenario: 'normal',  // normal | cold | empty | outbox | conflict
+  banner: null,        // { text, action }
+  untitledCounter: 5
+};
+
+/* ---- title resolution, exactly as ticket 01 settled it ---- */
+function derivedFrom(body) {
+  const line = (body || '').split('\n').map(s => s.trim()).find(s => s.length > 0);
+  if (!line) return null;
+  return line.replace(/^#{1,6}\s*/, '').trim().slice(0, 100);
+}
+function defaultTitleFor(note) { return 'Untitled Note ' + (note.untitledN || 1); }
+// resolvedTitle: what is persisted in `title`. isDefault: whether it fell through to the fallback.
+function resolved(note) {
+  if (note.titleIsCustom && note.title.trim()) return { text: note.title.trim(), kind: 'custom' };
+  if (!note.titleIsCustom) {
+    const d = derivedFrom(note.body);
+    if (d) return { text: d, kind: 'derived' };
+  }
+  return { text: defaultTitleFor(note), kind: 'default' };
+}
+function snippet(note) {
+  const r = resolved(note);
+  const rest = (note.body || '').split('\n').map(s => s.trim()).filter(Boolean);
+  const skip = r.kind === 'derived' ? 1 : 0;
+  return rest.slice(skip).join(' ') || (note.body ? '' : 'No additional text');
+}
+function ago(t) {
+  const m = Math.round((Date.now() - t) / 60e3);
+  if (m < 1) return 'just now';
+  if (m < 60) return m + 'm ago';
+  if (m < 1440) return Math.round(m / 60) + 'h ago';
+  return Math.round(m / 1440) + 'd ago';
+}
+function visible() {
+  let ns = S.notes.filter(n => S.view === 'trash' ? n.deletedAt : !n.deletedAt);
+  if (S.query.trim()) {
+    const q = S.query.toLowerCase();
+    ns = ns.filter(n => (resolved(n).text + ' ' + n.body).toLowerCase().includes(q));
+  }
+  return ns.sort((a, b) => (S.view === 'trash' ? b.deletedAt - a.deletedAt : b.updatedAt - a.updatedAt));
+}
+function open() { return S.notes.find(n => n.id === S.openId) || null; }
+function pendingCount() { return S.notes.filter(n => n.pending).length; }
+
+/* naive markdown, prototype-grade */
+function md(src) {
+  const esc = s => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  return esc(src || '')
+    .replace(/^###\s*(.+)$/gm, '<h3>$1</h3>')
+    .replace(/^##\s*(.+)$/gm, '<h2>$1</h2>')
+    .replace(/^#\s*(.+)$/gm, '<h1>$1</h1>')
+    .replace(/^[-*]\s+(.+)$/gm, '<li>$1</li>')
+    .replace(/(<li>[\s\S]*?<\/li>)/g, '<ul>$1</ul>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/^(?!<[hul])(.+)$/gm, '<p>$1</p>');
+}
+
+/* =======================================================================
+   Actions
+   ======================================================================= */
+function edit(patch) {
+  const n = open(); if (!n) return;
+  Object.assign(n, patch, { updatedAt: Date.now(), pending: true });
+  // simulate the debounced push landing 1.2s later, unless a scenario holds it
+  clearTimeout(n._t);
+  n._t = setTimeout(() => {
+    if (S.scenario !== 'outbox') { n.pending = false; render(); }
+  }, 1200);
+  render();
+}
+function newNote() {
+  const n = mk({ untitledN: S.untitledCounter++, pending: true });
+  S.notes.unshift(n); S.openId = n.id; S.mode = 'write'; S.drawer = false; S.banner = null;
+  render();
+  const b = document.querySelector('.body'); if (b) b.focus();   // focus BODY, not title
+}
+function trash(id) {
+  const n = S.notes.find(x => x.id === id);
+  n.deletedAt = Date.now(); n.pending = true;
+  S.openId = null; S.banner = null; render();
+}
+function restore(id) {
+  const n = S.notes.find(x => x.id === id);
+  n.deletedAt = null; n.pending = true; render();
+}
+
+/* The hard requirement from ticket 02: reconciliation moves this device's text to a
+   Conflict copy, and the open editor must follow the TEXT, not the id. Same characters,
+   same cursor, new document id, history.replaceState. Only a banner tells the user. */
+function simulateConflictRedirect() {
+  const n = open() || S.notes.find(x => !x.deletedAt);
+  if (!n) return;
+  S.openId = n.id; render();
+  const ta = document.querySelector('.body');
+  const sel = ta ? [ta.selectionStart, ta.selectionEnd] : null;
+
+  const copy = mk({
+    id: n.id + '~thisdevice', title: n.title, titleIsCustom: n.titleIsCustom,
+    body: n.body, conflictOf: n.id, updatedAt: Date.now(), pending: false
+  });
+  // the server's version survives at the original id, untouched, with the OTHER device's text
+  n.body = n.body + '\n\nAdded from the other device while you were away.';
+  n.updatedAt = Date.now();
+  n.pending = false;
+  S.notes.unshift(copy);
+  S.openId = copy.id;                                    // <-- the swap
+  history.replaceState(null, '', location.pathname + location.search);
+  S.banner = {
+    text: 'This note was edited on another device too. You’re still in your version — the other one is kept separately.',
+    action: 'Compare'
+  };
+  render();
+  const ta2 = document.querySelector('.body');
+  if (ta2 && sel) { ta2.focus(); ta2.setSelectionRange(sel[0], sel[1]); }
+}
+
+/* =======================================================================
+   Pieces
+   ======================================================================= */
+function h(html) { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstElementChild; }
+
+function listRows() {
+  const wrap = h('<div class="listwrap"></div>');
+
+  // Ticket 03: `initialSyncCompletedAt` distinguishes a downloading new device from an
+  // empty account. These are two different screens and must never be confused.
+  if (S.scenario === 'cold') {
+    wrap.append(h('<div class="empty"><h3>Getting your notes…</h3><p>This device is downloading your notes for the first time.</p></div>'));
+    wrap.append(h('<div class="skel"><div style="width:60%"></div><div style="width:88%"></div><div style="width:40%"></div><div style="width:72%"></div><div style="width:55%"></div></div>'));
+    return wrap;
+  }
+  if (S.scenario === 'coldoffline') {
+    wrap.append(h('<div class="empty"><h3>Waiting for a connection</h3><p>This device hasn’t downloaded your notes yet. They’ll appear as soon as it can reach the server.</p></div>'));
+    return wrap;
+  }
+  const ns = visible();
+  if (!ns.length) {
+    if (S.query.trim()) {
+      wrap.append(h(`<div class="empty"><h3>No notes match “${S.query}”</h3><p>Search looks at titles and note text.</p></div>`));
+    } else if (S.view === 'trash') {
+      wrap.append(h('<div class="empty"><h3>Trash is empty</h3><p>Deleted notes wait here for 30 days before they’re purged.</p></div>'));
+    } else {
+      const e = h('<div class="empty"><h3>No notes yet</h3><p>Everything you write is saved on this device first, then synced.</p></div>');
+      const b = h('<button class="primary">Write your first note</button>');
+      b.onclick = newNote; e.append(b); wrap.append(e);
+    }
+    return wrap;
+  }
+  for (const n of ns) {
+    const r = resolved(n);
+    const row = h(`<button class="row ${n.id === S.openId ? 'active' : ''}">
+        <div class="t"><span class="title ${r.kind === 'default' ? 'default' : ''}">${r.text}</span>
+        ${n.conflictOf ? '<span class="slot11">badge → t11</span>' : ''}</div>
+        <div class="snip">${snippet(n)}</div>
+        <div class="meta">${n.pending ? '<span class="dot"></span>' : ''}<span>${S.view === 'trash' ? 'deleted ' + ago(n.deletedAt) : ago(n.updatedAt)}</span></div>
+      </button>`);
+    row.onclick = () => { S.openId = n.id; S.drawer = false; S.banner = null; S.mode = n.deletedAt ? 'read' : 'write'; render(); };
+    wrap.append(row);
+  }
+  return wrap;
+}
+
+function listHeader(opts = {}) {
+  const bar = h('<div class="bar"></div>');
+  if (opts.back) {
+    const b = h('<button class="iconbtn" title="Back">←</button>');
+    b.onclick = opts.back; bar.append(b);
+  }
+  const s = h(`<div class="grow"><input class="search" placeholder="${S.view === 'trash' ? 'Search trash' : 'Search notes'}" value="${S.query}"></div>`);
+  const inp = s.querySelector('input');
+  inp.oninput = e => { S.query = e.target.value; const p = document.activeElement === inp; render(); if (p) { const i = document.querySelector('.search'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); } };
+  bar.append(s);
+
+  const m = h('<button class="iconbtn" title="Menu">⋮</button>');
+  m.onclick = e => { e.stopPropagation(); S.menu = !S.menu; render(); };
+  bar.append(m);
+  if (opts.newBtn) { const b = h('<button class="primary">New note</button>'); b.onclick = newNote; bar.append(b); }
+  return bar;
+}
+
+function menu() {
+  const m = h('<div class="menu"></div>');
+  const item = (label, fn) => { const b = h(`<button>${label}</button>`); b.onclick = () => { S.menu = false; fn(); }; m.append(b); };
+  if (S.view === 'notes') item('Trash', () => { S.view = 'trash'; S.openId = null; S.query = ''; render(); });
+  else item('← Back to notes', () => { S.view = 'notes'; S.openId = null; S.query = ''; render(); });
+  item('badrishv2002@gmail.com · Sign out', () => alert('Sign out (prototype)'));
+  return m;
+}
+
+function editor(note, opts = {}) {
+  const ed = h('<div class="editor"></div>');
+  const r = resolved(note);
+  const readOnly = !!note.deletedAt;
+
+  /* toolbar: back (phone), write/read toggle, per-note sync status, delete */
+  const bar = h('<div class="bar"></div>');
+  if (opts.back) { const b = h('<button class="iconbtn" title="Back">←</button>'); b.onclick = opts.back; bar.append(b); }
+  /* Badrish, 2026-08-25: no two-mode Read/Write framing. Write IS the mode.
+     Preview survives only as an action you invoke and dismiss. */
+  const pvb = h(`<button class="iconbtn" title="Preview" style="border-color:${S.mode === 'read' ? 'var(--line)' : 'transparent'};background:${S.mode === 'read' ? 'var(--sel)' : 'none'}">Preview</button>`);
+  pvb.onclick = () => { S.mode = S.mode === 'read' ? 'write' : 'read'; render(); };
+  bar.append(pvb);
+  bar.append(h('<div class="grow"></div>'));
+  bar.append(h(`<div class="status ${note.pending ? 'pending' : ''}">${note.pending ? 'Saved on this device' : 'Saved'}</div>`));
+  if (!readOnly) { const d = h('<button class="iconbtn" title="Delete">\u{1F5D1}</button>'); d.onclick = () => trash(note.id); bar.append(d); }
+  ed.append(bar);
+
+  if (readOnly) {
+    const b = h('<div class="banner"><div class="grow">This note is in the Trash and can’t be edited. It’s purged 30 days after deletion.</div></div>');
+    const btn = h('<button class="link">Restore</button>'); btn.onclick = () => { restore(note.id); S.mode = 'write'; render(); };
+    b.append(btn); ed.append(b);
+  }
+  if (S.banner) {
+    const b = h(`<div class="banner"><div class="grow">${S.banner.text}</div></div>`);
+    const a = h(`<button class="link">${S.banner.action}</button>`);
+    a.onclick = () => alert('Compare / merge is ticket 11 — deliberately not designed here.');
+    const x = h('<button class="iconbtn" title="Dismiss">✕</button>');
+    x.onclick = () => { S.banner = null; render(); };
+    b.append(a, x); ed.append(b);
+  }
+
+  /* title: value only when Custom; the derived/default string is the PLACEHOLDER */
+  const ti = h(`<input class="titleinput" placeholder="${r.text}" value="${note.titleIsCustom ? note.title.replace(/"/g, '&quot;') : ''}" ${readOnly ? 'disabled' : ''}>`);
+  ti.oninput = e => {
+    const v = e.target.value;
+    const pos = e.target.selectionStart;
+    edit({ title: v, titleIsCustom: true });   // <-- the one-way latch, on the first keystroke
+    const t = document.querySelector('.titleinput'); t.focus(); t.setSelectionRange(pos, pos);
+  };
+  ed.append(ti);
+
+  if (!readOnly && !note.titleIsCustom) {
+    ed.append(h('<div class="titlehint">Following the first line of the note. Type here to name it yourself.</div>'));
+  } else if (!readOnly && note.titleIsCustom && !note.title.trim()) {
+    ed.append(h(`<div class="titlehint">This note keeps its own title now — clearing it doesn’t go back to following the first line. It’s listed as <em>${r.text}</em>.</div>`));
+  }
+
+  const ta = h(`<textarea class="body" placeholder="Start writing…" ${readOnly ? 'disabled' : ''}></textarea>`);
+  ta.value = note.body;
+  ta.oninput = e => {
+    const pos = e.target.selectionStart;
+    edit({ body: e.target.value });
+    const t = document.querySelector('.body'); t.focus(); t.setSelectionRange(pos, pos);
+  };
+  const pv = h(`<div class="preview">${md(note.body) || '<p style="color:var(--dim)">Nothing to preview yet.</p>'}</div>`);
+
+  if (S.mode === 'read') ed.append(pv);
+  else if (S.mode === 'split') { const sp = h('<div class="split"></div>'); sp.append(ta, pv); ed.append(sp); }
+  else ed.append(ta);
+  return ed;
+}
+
+function syncStrip() {
+  const c = pendingCount();
+  if (!c || S.scenario !== 'outbox') return null;
+  return h(`<div class="strip">${c} note${c > 1 ? 's' : ''} waiting to sync · they’re safe on this device</div>`);
+}
+
+/* =======================================================================
+   The three variants
+   ======================================================================= */
+
+/* A — Master-detail. Desktop: persistent list beside the editor.
+       Phone: list screen pushes to a full-screen editor. */
+function VariantA(app) {
+  const wide = app.clientWidth > 760;
+  if (wide) {
+    const tp = h('<div class="twopane"></div>');
+    const pl = h('<div class="pane-list"></div>');
+    pl.append(listHeader({ newBtn: true }), listRows());
+    const pe = h('<div class="pane-ed"></div>');
+    const n = open();
+    pe.append(n ? editor(n) : h('<div class="empty"><h3>Pick a note</h3><p>Or start a new one.</p></div>'));
+    tp.append(pl, pe);
+    app.append(tp);
+  } else {
+    if (S.openId && open()) {
+      app.append(editor(open(), { back: () => { S.openId = null; S.banner = null; render(); } }));
+    } else {
+      app.append(listHeader(S.view === 'trash' ? { back: () => { S.view = 'notes'; render(); } } : {}), listRows());
+      if (S.view === 'notes') { const f = h('<button class="fab">+</button>'); f.onclick = newNote; app.append(f); }
+    }
+  }
+}
+
+/* B — Editor-first. The editor is the app and always fills the window;
+       the list is a drawer you pull open. Same on phone and desktop. */
+function VariantB(app) {
+  const n = open() || visible()[0];
+  if (n) S.openId = n.id;
+  const bar = h('<div class="bar"></div>');
+  const burger = h('<button class="iconbtn" title="All notes">☰</button>');
+  burger.onclick = () => { S.drawer = true; render(); };
+  bar.append(burger);
+  bar.append(h(`<div class="grow" style="color:var(--dim);font-size:13px">${S.view === 'trash' ? 'Trash' : 'All notes'}</div>`));
+  const nb = h('<button class="primary">New</button>'); nb.onclick = newNote; bar.append(nb);
+  app.append(bar);
+  app.append(n ? editor(n) : h('<div class="empty"><h3>No notes yet</h3><p>Start one — it saves as you type.</p></div>'));
+
+  if (S.drawer) {
+    const sc = h('<div class="scrim"></div>'); sc.onclick = () => { S.drawer = false; render(); };
+    const dr = h('<div class="drawer"></div>');
+    dr.append(listHeader({ back: () => { S.drawer = false; render(); } }), listRows());
+    app.append(sc, dr);
+  }
+}
+
+/* C — Two full screens, identical on phone and desktop. The list is a screen,
+       the editor is a screen. One code path, no breakpoint, nothing side by side. */
+function VariantC(app) {
+  if (S.openId && open()) {
+    app.append(editor(open(), { back: () => { S.openId = null; S.banner = null; render(); } }));
+  } else {
+    const head = h('<div class="bar"></div>');
+    head.append(h(`<div class="grow" style="font-weight:700;font-size:18px">${S.view === 'trash' ? 'Trash' : 'Notes'}</div>`));
+    const m = h('<button class="iconbtn">⋮</button>');
+    m.onclick = e => { e.stopPropagation(); S.menu = !S.menu; render(); };
+    head.append(m);
+    app.append(head);
+    const sb = h('<div class="bar" style="border-bottom:1px solid var(--line)"></div>');
+    const s = h(`<div class="grow"><input class="search" placeholder="Search notes" value="${S.query}"></div>`);
+    const inp = s.querySelector('input');
+    inp.oninput = e => { S.query = e.target.value; render(); const i = document.querySelector('.search'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); };
+    sb.append(s); app.append(sb);
+    app.append(listRows());
+    if (S.view === 'notes') { const f = h('<button class="fab">+</button>'); f.onclick = newNote; app.append(f); }
+  }
+}
+
+/* =======================================================================
+   Render
+   ======================================================================= */
+function render() {
+  const app = document.getElementById('app');
+  app.innerHTML = '';
+  document.getElementById('stage').className = S.phone ? 'phone' : '';
+
+  if (S.scenario === 'signin') {
+    app.append(h(`<div class="empty" style="margin:auto">
+      <h3>NoteMaker</h3><p>Your notes, on both devices.</p>
+      <button class="primary">Continue with Google</button>
+      <div class="banner" style="margin-top:22px;border-radius:8px;border:1px solid #ecdcb8">
+        <div class="grow">Can’t reach Google to sign in. Check your connection and try again — nothing is lost.</div></div>
+    </div>`));
+    protoBar(); return;
+  }
+
+  ({ A: VariantA, B: VariantB, C: VariantC }[S.variant] || VariantA)(app);
+  if (S.menu) { const m = menu(); app.append(m); document.addEventListener('click', () => { S.menu = false; render(); }, { once: true }); }
+  const strip = syncStrip(); if (strip) app.append(strip);
+  protoBar();
+}
+
+const VNAMES = { A: 'Master-detail', B: 'Editor-first drawer', C: 'Two full screens' };
+function protoBar() {
+  const p = document.getElementById('proto');
+  p.innerHTML = '';
+  const btn = (label, fn) => { const b = h(`<button>${label}</button>`); b.onclick = fn; p.append(b); return b; };
+  const cycle = d => {
+    const ks = ['A', 'B', 'C']; S.variant = ks[(ks.indexOf(S.variant) + d + 3) % 3];
+    const u = new URL(location); u.searchParams.set('variant', S.variant); history.replaceState(null, '', u);
+    render();
+  };
+  btn('←', () => cycle(-1));
+  p.append(h(`<span class="vlabel">${S.variant} · ${VNAMES[S.variant]}</span>`));
+  btn('→', () => cycle(1));
+  p.append(h('<span class="sep"></span>'));
+  btn(S.phone ? 'phone' : 'desktop', () => { S.phone = !S.phone; render(); });
+  p.append(h('<span class="sep"></span>'));
+  btn('reset', () => { S.notes = seedNotes(); S.openId = null; S.view = 'notes'; S.query = ''; S.scenario = 'normal'; S.banner = null; S.untitledCounter = 5; render(); });
+  btn('new device: downloading', () => { S.scenario = S.scenario === 'cold' ? 'normal' : 'cold'; S.openId = null; render(); });
+  btn('new device: offline', () => { S.scenario = S.scenario === 'coldoffline' ? 'normal' : 'coldoffline'; S.openId = null; render(); });
+  btn('empty account', () => { S.notes = []; S.openId = null; S.scenario = 'normal'; S.untitledCounter = 1; render(); });
+  btn('outbox', () => { S.scenario = S.scenario === 'outbox' ? 'normal' : 'outbox'; if (S.scenario === 'outbox') { S.notes[0].pending = true; S.notes[2].pending = true; } else S.notes.forEach(n => n.pending = false); render(); });
+  btn('conflict redirect', simulateConflictRedirect);
+  btn('sign-in offline', () => { S.scenario = S.scenario === 'signin' ? 'normal' : 'signin'; render(); });
+}
+
+addEventListener('keydown', e => {
+  const t = e.target.tagName;
+  if (t === 'INPUT' || t === 'TEXTAREA' || e.target.isContentEditable) return;
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    const ks = ['A', 'B', 'C']; S.variant = ks[(ks.indexOf(S.variant) + (e.key === 'ArrowRight' ? 1 : 2)) % 3];
+    const u = new URL(location); u.searchParams.set('variant', S.variant); history.replaceState(null, '', u);
+    render();
+  }
+});
+addEventListener('resize', render);
+render();
+</script>
+</body>
+</html>

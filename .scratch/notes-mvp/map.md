@@ -95,6 +95,29 @@ tension is ticket 02, not a settled matter.
   origin and auth domain are different sites, exactly the split ticket 08 found breaks
   `signInWithRedirect`. Recommendations carried forward: don't initialise Analytics, restrict the
   API key by HTTP referrer.
+- [05 · Editor and app-shell UX](../issues/05-editor-and-shell-ux.md): **The app has no concept of
+  "offline"** — 02 removed online detection, so an Offline badge cannot be built honestly and does not
+  exist. Every sync affordance is Outbox state about a *Note*: `Saved` vs `Saved on this device` in
+  the editor, an amber dot in the list, one quiet `N notes waiting to sync` strip, no dialogs and no
+  retry button. Shell is **master-detail** — persistent list beside the editor on desktop, list screen
+  pushing to a full-screen editor on phone. Markdown is **typed as markup** in a plain textarea, no
+  WYSIWYG, because 11's merge works on source. **There is one mode and it is Write** (Badrish cut the
+  Write/Read pair); preview survives only as an invoked action, and split-pane died with it. Saving is
+  debounced and *must* flush on blur, `visibilitychange` and `pagehide` or Android backgrounding eats
+  writes. **Badrish asked for a manual-save setting, still open** — the only honest reading is that it
+  gates the *push*, never the mirror write, which widens 02's snapshot guard from `pendingRev !== null`
+  to also cover locally-unsent content, or the other device's snapshot eats the unsent paragraph.
+  The title latch is taught by the field itself — Derived means the input is **empty and
+  the resolved title is its placeholder**, so the first keystroke is the latch and grey-versus-solid
+  is the whole explanation; the one state that gets copy is Custom-but-emptied, where the user is
+  trying to undo it — and **Badrish ruled the latch gets no escape hatch**, against both
+  recommendations. **A Default title is never announced, only shown** (muted and italic in the
+  list), and a new Note focuses the **body**, never the title. Trash opens **read-only** so an edit
+  can't resurrect a Tombstone by the side door. 02's redirect is honoured as a **silent swap** —
+  not one character or the selection moves, `replaceState` never `pushState`, one dismissible banner.
+  Cold start distinguishes downloading from empty via 03's `initialSyncCompletedAt`, and a returning
+  device has **no loading state at all**. Oversized bodies never block typing; only the sync fails,
+  visibly. Prototype: [prototypes/05-shell/index.html](../prototypes/05-shell/index.html) (throwaway).
 - [07 · PWA service worker](../issues/07-pwa-service-worker.md): `generateSW`, no runtime caching
   (Firestore uses IndexedDB, not Cache Storage); precache Vite's hashed shell only; update mode
   (`autoUpdate` vs `prompt`) must be chosen before first deploy, not switched later; Android
@@ -113,9 +136,11 @@ tension is ticket 02, not a settled matter.
 - Note list ordering, and whether pinning exists at all
 - Whether the 30-day Trash purge runs client-side on open, or needs a scheduled Cloud Function
 - Behaviour at large Note counts: when client-side search and a full local mirror stop being viable
-- First-run experience: what a brand-new account sees before it has any Notes
-- Empty, loading, and error states across the app
-- Android integration beyond installability: back-button behaviour, share-target intent
+- First-run experience: any *onboarding* beyond the bare empty-account screen 05 settled
+- Empty, loading and error states beyond the shell ones 05 settled (it covered downloading vs empty,
+  no results, offline sign-in, oversized body — not everything)
+- Android integration beyond installability: share-target intent (back-button behaviour graduated
+  out of here into ticket 12)
 - Note export and backup — getting the corpus out
 
 ## Out of scope
