@@ -61,10 +61,33 @@ measurementId       G-4Z7S3RNJPP
    reintroduce it when scaffolding the app.
 3. **`storageBucket` goes unused.** File attachments are out of scope; no Storage rules need
    writing or hardening.
-4. **Restrict the API key.** Public by design does not mean unrestricted: the key should carry an
-   HTTP-referrer restriction in the Google Cloud console limiting it to the `pages.dev` origin and
-   localhost, so it cannot be used to drive quota from elsewhere. Not blocking; worth doing before
-   the app is in daily use.
+4. **Restrict the API key — and include the auth domain.** Public by design does not mean
+   unrestricted: the key should carry an HTTP-referrer restriction in the Google Cloud console so it
+   cannot be used to drive Identity Toolkit quota from elsewhere.
+
+   **The referrer list must include `notemaker-claude.firebaseapp.com`.** `signInWithPopup` opens a
+   handler page at `https://notemaker-claude.firebaseapp.com/__/auth/handler`, and that page calls
+   Identity Toolkit with this same key. Restricting to only the app origin and localhost blocks the
+   key's own auth handler and sign-in fails with `Requests from referer <domain> are blocked`
+   (firebase-js-sdk#5657). An earlier revision of this item omitted this and was wrong.
+
+   Required entries:
+
+   ```
+   https://note-maker-f41.pages.dev/*
+   https://notemaker-claude.firebaseapp.com/*     <- without this, sign-in breaks
+   http://localhost:5173/*                        <- Vite dev default; add other ports as used
+   ```
+
+   If ticket 10 enables Cloudflare Pages **preview deployments**, those get generated subdomains
+   (`<hash>.note-maker-f41.pages.dev`) which the entries above do not cover. Either add
+   `https://*.note-maker-f41.pages.dev/*` or accept that sign-in only works on production.
+
+   If **API restrictions** (as opposed to application restrictions) are ever also applied to this
+   key, `identitytoolkit.googleapis.com`, `securetoken.googleapis.com`, and
+   `firestore.googleapis.com` must all remain allowed.
+
+   Not blocking; worth doing before the app is in daily use.
 
 ### Checklist status
 
