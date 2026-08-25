@@ -98,3 +98,28 @@ locally* were verified explicitly rather than assumed:
 - **Step 6** — `note-maker-f41.pages.dev` added to Firebase Auth's **Authorised domains**. ✅
 
 Ticket 10 can deploy against this project without a further provisioning round.
+
+### Verifying the API key restriction without an app
+
+The referrer check happens at Google's edge, so it can be exercised with a plain HTTP call long
+before any app exists — no deploy and no dev server needed. Probe the Identity Toolkit config
+endpoint with a spoofed `Referer`:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' \
+  -H "Referer: https://note-maker-f41.pages.dev/" \
+  "https://identitytoolkit.googleapis.com/v1/projects?key=$FIREBASE_API_KEY"
+```
+
+`200` means allowed, `403` with `Requests from referer <origin> are blocked` means it is not on the
+list. Verified on 2026-08-25: production origin, preview subdomain, auth handler, and
+`localhost:5173` all returned 200; an unlisted origin and a request with **no** `Referer` both
+returned 403, confirming the key is unusable from non-browser clients.
+
+**Ports must be listed explicitly** — port wildcards are not reliably honoured. Both Vite ports are
+needed:
+
+- `http://localhost:5173/*` — dev server
+- `http://localhost:4173/*` — **preview server**, which is the one that matters for PWA work, since
+  service workers do not activate in the dev server. Omitting it makes the first local PWA test fail
+  with a 403 that looks like a service-worker bug rather than a key restriction.
