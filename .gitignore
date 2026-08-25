@@ -1,0 +1,48 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-ssr/
+*.local
+
+# vite-plugin-pwa generates this in the project root during dev
+dev-dist/
+
+# Environment — the Firebase web config is public by design, but ignore .env
+# anyway so anything genuinely secret added later cannot leak. Commit
+# .env.example instead as the reference for which variables are required.
+.env
+.env.*
+!.env.example
+
+# Firebase emulator artefacts (.firebaserc is committed — it holds project aliases)
+.firebase/
+firebase-debug.log*
+firestore-debug.log*
+ui-debug.log*
+firebase-export-*/
+
+# Cloudflare Wrangler
+.wrangler/
+
+# Test coverage
+coverage/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Editors
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
