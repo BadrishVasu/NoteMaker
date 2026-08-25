@@ -216,3 +216,62 @@ pristine-guard fallback rests on reasoning rather than the model), and no purge.
 - **A device offline past the 30-day purge**, holding an edit to a Note that has since been purged,
   recreates its text as a live Conflict copy. Consistent with the rules, never loses writing,
   accepted. Suppressing it is machinery for a case that will not occur.
+
+### Amendment, 2026-08-25 — manual-send setting
+
+Badrish added a settings toggle: when on, an edit writes to the mirror immediately but is not
+pushed until the user presses a send affordance. UI/UX flagged a possible break in the snapshot
+guard (`onSnapshot` must never overwrite a dirty Note's body) and asked the mathematician to
+re-check before anyone built on it.
+
+**The failure UI/UX suspected is real, but only under the implementation they had in mind — not
+under this mechanism as specified.**
+
+UI/UX's candidate implementation deferred *minting `pendingRev`* to the send press ("mint
+`pendingRev` at button-press instead of edit-time"). Concretely: Note N is synced on both devices
+at `rev = R0`. On device A (manual send on) the user types, so the mirror body changes but
+`pendingRev` stays `null` — under that plan the Note is not yet "in the Outbox." Device B edits
+and pushes, landing `rev = R1` on the server. A's `onSnapshot` fires; the guard checks dirtiness
+via `pendingRev !== null`, finds `null`, concludes the row is clean, and overwrites A's local body
+with B's server content and advances `baseRev` to `R1` — destroying text the user is actively
+looking at. This is exactly the class of bug the guard exists to prevent, reintroduced by
+conflating "queued to send" with "has unconfirmed local content."
+
+**Fix: don't defer minting `pendingRev`.** Entering the Outbox stays exactly as this ticket
+already specifies — unconditional, at edit time, on every keystroke, regardless of the manual-send
+setting. `pendingRev` is minted and the row becomes dirty the instant the user types, in both
+modes. The setting only gates one thing: **whether the debounced flush is allowed to call
+`runTransaction` for a dirty row.** In auto mode the flush attempts the push as soon as debounce
+allows (as already specified). In manual mode the flush is additionally gated on the user having
+pressed the Note's send affordance since its last push attempt; `blur`, `visibilitychange` and
+`pagehide` do not force a push in manual mode (they force nothing extra, since the mirror write is
+already synchronous per keystroke and durability was never gated by the flush).
+
+This is a one-line change to the trigger condition of `begin-push`, a client-side gate that sits
+outside the transaction entirely. It touches nothing this ticket specified: `pendingRev`/`baseRev`
+semantics, the reconcile transaction's three equality tests, the conflict branches, and the
+snapshot guard (`pendingRev !== null` stays correct and untouched, because a Note the user is
+mid-typing on *is* dirty from the first keystroke in both modes). No new document field, no new
+mirror field beyond a client-only "send requested since last dirty" bit that never enters the
+transaction's read or write set.
+
+**"Dirty" is not the wrong signal.** `pendingRev !== null` already means "has local content not
+yet confirmed by the server," which is the correct predicate. What was wrong was treating "in the
+Outbox" as synonymous with "about to be pushed" — this ticket never made that equation; the two
+were already separate concepts (recording an edit vs. attempting a push, itself already
+asynchronous and debounced) and manual send is just a second, user-controlled gate on the
+already-asynchronous push attempt.
+
+**Re-verification is a corollary, not a re-run.** The model check exhaustively explored
+interleavings of `{edit, delete, begin-push, commit-push}` to depth 7, where `begin-push` already
+fires nondeterministically — including traces where it is deferred arbitrarily long relative to
+`edit`. Manual send does not add a new action or a new state; it only further restricts *when* the
+scheduler may choose `begin-push`, which is a subset of schedules already inside the checked
+transition system. A safety property that holds for every schedule in a set holds for every
+schedule in any subset of it. So the three invariants (no write destroys unobserved content,
+devices and server converge, unsynced content survives reconnect) carry over to manual send without
+re-running the model, at the same depth-7 confidence as before — neither better nor worse than the
+existing limit.
+
+**Verdict: no change to the reconcile mechanism, the guard predicate, or the document schema.**
+Manual send is implemented one layer up, in the flush trigger, not in 02's transaction or guard.
