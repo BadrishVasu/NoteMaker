@@ -49,3 +49,6 @@ desktop.ini
 
 # For Badrish
 BadrishTTR.txt
+# Local operator scripts — kept out of the repo deliberately. The equivalent
+# curl command lives on wayfinder ticket 04 as the durable record.
+/scripts/check-api-key-referrers.ps1
