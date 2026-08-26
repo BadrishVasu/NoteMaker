@@ -1,0 +1,82 @@
+#!/bin/sh
+# Blocks credential-shaped strings from entering the repo.
+#
+# Enabled per clone with:  git config core.hooksPath .githooks
+#
+# This exists because NoteMaker is a public repo and its wayfinder tickets under
+# .scratch/ are committed on purpose. That is the right call — tickets are the
+# decision record — but it means a value pasted into a ticket is a value pushed
+# to the public internet. .gitignore closes the .env path; this closes the
+# "typed it into a document" path, which is how the Firebase web API key reached
+# origin/main on 2026-08-25.
+#
+# Escape hatches, in order of preference:
+#   1. Put the real value somewhere else and commit a pointer to it.
+#   2. Append  pragma: allowlist secret  to the line, if it is genuinely a
+#      sample/placeholder that has to look like the real thing.
+#   3. git commit --no-verify  — deliberate, and on you.
+set -u
+
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+[ -n "$staged" ] || exit 0
+
+report=''
+NL='
+'
+
+# A real .env can only be staged via `git add -f`, which is exactly the moment
+# someone has already talked themselves past .gitignore.
+IFS=$NL
+for f in $staged; do
+  case "$f" in
+    .env|.env.*|*/.env|*/.env.*)
+      case "$f" in
+        *.example|*.sample|*.template) ;;
+        *) report="$report  $f — environment file; commit .env.example instead$NL" ;;
+      esac ;;
+  esac
+done
+unset IFS
+
+# Patterns are high-signal only: a scanner that cries wolf gets bypassed, and a
+# bypassed scanner is worth less than no scanner.
+patterns=$(cat <<'PATTERNS'
+Google API key (AIzaSy…)	AIzaSy[0-9A-Za-z_-]{33}
+GitHub token	(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36}
+GitHub fine-grained PAT	github_pat_[A-Za-z0-9_]{22,}
+AWS access key id	AKIA[0-9A-Z]{16}
+Slack token	xox[baprs]-[A-Za-z0-9-]{10,}
+Anthropic API key	sk-ant-[A-Za-z0-9_-]{20,}
+OpenAI-style API key	sk-[A-Za-z0-9]{32,}
+GitLab personal access token	glpat-[A-Za-z0-9_-]{20,}
+npm token	npm_[A-Za-z0-9]{36}
+PEM private key block	-----BEGIN [A-Z ]*PRIVATE KEY-----
+GCP service-account JSON	"type"[[:space:]]*:[[:space:]]*"service_account"
+Signed JWT	eyJhbGciOi[A-Za-z0-9_-]{8,}
+Secret assigned to a known token variable	(CLOUDFLARE_API_TOKEN|CF_API_TOKEN|FIREBASE_TOKEN|NPM_TOKEN|GH_TOKEN|GITHUB_TOKEN|NPM_AUTH_TOKEN)[[:space:]]*[:=][[:space:]]*['"]?[A-Za-z0-9_-]{20,}
+PATTERNS
+)
+
+IFS=$NL
+for f in $staged; do
+  blob=$(git show ":$f" 2>/dev/null) || continue
+  for entry in $patterns; do
+    name=${entry%%	*}
+    regex=${entry#*	}
+    [ -n "$regex" ] && [ "$regex" != "$entry" ] || continue
+    # -e matters: several patterns start with '-' and would parse as options.
+    hits=$(printf '%s\n' "$blob" | grep -nIE -e "$regex" 2>/dev/null | grep -v 'allowlist secret')
+    [ -n "$hits" ] || continue
+    report="$report$(printf '%s\n' "$hits" | sed "s|^\([0-9][0-9]*\):.*|  $f:\1 — $name|")$NL"
+  done
+done
+unset IFS
+
+[ -n "$report" ] || exit 0
+
+printf '\npre-commit: refusing to commit — credential-shaped content staged.\n\n' >&2
+printf '%s' "$report" >&2
+printf '\nMove the value out of the repo and commit a pointer to it.\n' >&2
+printf 'If the line is a genuine placeholder, append: pragma: allowlist secret\n' >&2
+printf 'To override deliberately: git commit --no-verify\n\n' >&2
+exit 1

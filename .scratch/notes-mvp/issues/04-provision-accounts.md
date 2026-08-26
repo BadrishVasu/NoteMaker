@@ -34,12 +34,17 @@ Checklist:
 ### Firebase web config
 
 These values are **public by design** — Firebase web config ships inside the client bundle and
-cannot be hidden. Security comes from Firestore rules (ticket 01) and Auth authorised domains, not
-from keeping these secret. Recording them here is therefore safe and is the canonical reference for
-ticket 10, which wires them in as `VITE_FIREBASE_*` build variables.
+cannot be hidden from anyone running the app. Security comes from Firestore rules (ticket 01) and
+Auth authorised domains, not from keeping these values secret.
+
+**That is not the same as publishing them.** "Cannot be hidden from a user of the app" and "belongs
+in a public Git repository" are different claims, and an earlier revision of this ticket conflated
+them. This repo is public and `.scratch/` is committed on purpose, so a value pasted here is a value
+indexed by every credential scanner pointed at GitHub. The `apiKey` is therefore **not recorded in
+this repo**; the identifiers below are, because they are names rather than keys.
 
 ```
-apiKey              AIzaSyDxz3-jmljEYe4I_XJ60XCPGqBNt0fuOfw
+apiKey              <not recorded here — see "Where the apiKey lives" below>
 authDomain          notemaker-claude.firebaseapp.com
 projectId           notemaker-claude
 storageBucket       notemaker-claude.firebasestorage.app
@@ -47,6 +52,26 @@ messagingSenderId   27217454343
 appId               1:27217454343:web:d53445fd7173e373cc91a2
 measurementId       G-4Z7S3RNJPP
 ```
+
+### Where the apiKey lives
+
+Firebase console → Project settings → General → Your apps → Web app → SDK setup and configuration.
+Ticket 10 supplies it to the build as `VITE_FIREBASE_API_KEY`, set as a Cloudflare Pages environment
+variable and in a local `.env` (gitignored). Nothing in the repo holds the literal value, and
+`.githooks/pre-commit` refuses any commit that reintroduces one.
+
+### Referrer restriction is a quota guard, not an auth boundary
+
+Worth stating plainly, because the restriction verified below reads as stronger than it is: the
+`Referer` header is set by the caller, so any non-browser client can spoof an allowed origin and be
+served. A `curl` request carrying `Referer: https://note-maker-f41.pages.dev/` returns `200` — the
+verification procedure below is itself the proof. What the restriction actually buys is that a
+scraped key cannot be pointed at this project's Identity Toolkit quota by a bot sending no `Referer`
+at all, which is the overwhelming majority of them.
+
+What stands between a scraped `apiKey` and the notes themselves is Firestore rules (ticket 01) plus
+Google sign-in. That was always the design; this note only removes the temptation to read the
+referrer list as a second lock.
 
 ### Facts later tickets depend on
 
@@ -114,7 +139,9 @@ curl -s -o /dev/null -w '%{http_code}\n' \
 `200` means allowed, `403` with `Requests from referer <origin> are blocked` means it is not on the
 list. Verified on 2026-08-25: production origin, preview subdomain, auth handler, and
 `localhost:5173` all returned 200; an unlisted origin and a request with **no** `Referer` both
-returned 403, confirming the key is unusable from non-browser clients.
+returned 403. Re-verified 2026-08-26 with the same result. Note the limit of that claim: it shows
+the key is unusable by a client that sends no `Referer`, not that it is unusable by non-browser
+clients in general — see "Referrer restriction is a quota guard" above.
 
 **Ports must be listed explicitly** — port wildcards are not reliably honoured. Both Vite ports are
 needed:
