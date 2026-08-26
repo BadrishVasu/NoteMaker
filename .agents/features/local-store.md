@@ -33,5 +33,20 @@ Full reasoning lives on ticket 03; the constraints that forced each, in one line
 - Sign-out keeps the local Notes; `persist()` on first sign-in, silent retry per open if denied, and
   05's sync strip drops "they're safe on this device" while denied — Badrish — 2026-08-25
 
+- `lastServerState` (Mathematician's extended 02 check, appendix) stays **out of the stored row** —
+  in-memory, owned by the sync engine, rebuilds from 03's own full re-read on every fresh tab —
+  designer — 2026-08-25
+
+- Server-clock (`serverSeq: serverTimestamp()`) watermark to replace the full re-read per open —
+  **considered and deferred, not rejected on the old reason.** Badrish's question dissolved the
+  client-clock-skew objection; it stays out because a filtered query never delivers removals, so a
+  hard delete elsewhere would leave the Note in the mirror forever, and `persistentLocalCache`'s
+  resume token fixes the same read cost correctly for one line — designer — 2026-08-26
+- A server-assigned value can never be 02's identity token: the push must know the token before the
+  round trip or a retry after a lost response can't recognise its own landed write — designer —
+  2026-08-26
+
 ## Open questions
 - Growth story past ~2,000 Notes / ~20 MB — deferred to the map's "Not yet specified"
+- Read cost per app open under Android's constant background/reap cycle — Builder's step-7
+  measurement decides whether `persistentLocalCache` comes back on. Waiting on: builder

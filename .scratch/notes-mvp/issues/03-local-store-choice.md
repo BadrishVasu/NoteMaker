@@ -201,3 +201,50 @@ That leaves the emulator responsible only for security rules and real transactio
 - **Ticket 10 owes nothing new**; the cache setting is application code, not build config.
 - No ticket is invalidated. No new ticket graduates from the fog — the growth story (search and
   mirror size at large Note counts) stays on "Not yet specified" with a number attached to it now.
+
+## Amendment, 2026-08-26 — the server-clock watermark (Badrish)
+
+Badrish asked why we can't have a server clock as the base clock we compare against. The question
+lands on two different decisions and the answer differs for each.
+
+**On 02's reconcile: no, and a server clock would be a regression.** Not amended. Concurrency is a
+causality question, not a time question — two devices can write at distinct, correctly-ordered
+server times and still be concurrent, so "later timestamp wins" is exactly the last-write-wins data
+loss 02 exists to prevent. And a server-assigned value cannot serve as the identity token at all:
+the push must know the token it is writing *before* the round trip, because that is what lets a
+retry after a lost response recognise its own landed write (`srv.rev === pendingRev`) instead of
+fabricating a Conflict copy of its own text. A value the server assigns is by definition unknown
+until after the trip. This is the same failure that killed the counter, through a different door.
+02's three equality tests stand unchanged, and `domain/` still reads no clock.
+
+**On this ticket's rejected watermark: the objection I raised is genuinely dissolved.** The
+rejection above is conditional on *client* clocks — "a device whose clock lags writes an
+`updatedAt` beneath our watermark." A server-stamped field has one writer and one clock, so that
+specific silent-loss path does not exist. Badrish is right about that, and the ticket's wording
+above should not be read as ruling out the server-clock variant; it never considered it.
+
+Shape it would take, if adopted — recorded so nobody re-derives it:
+
+- A **new** field, e.g. `serverSeq: serverTimestamp()`, **not** a change to `updatedAt`. `updatedAt`
+  stays client-stamped, because a server sentinel reads back null and 01 chose client millis for
+  exactly that reason; `serverSeq` is a sync-layer field the UI and `domain/` never read.
+- Security rules must pin it: `request.resource.data.serverSeq == request.time`. Without that a
+  buggy client writing a low value makes its own document invisible to every future watermark query,
+  permanently — the rejected trap re-entering by the front door.
+- Watermark is `max(serverSeq)` over the delivered set, re-queried with `>=` and deduped. Safe under
+  Firestore's commit-timestamp ordering, but that claim is **model-check-worthy before it ships**,
+  not assertable from reasoning — it is the same class of claim as 02's snapshot rules, which were
+  reasoned and turned out to be wrong.
+
+**Still not adopted, and the reason is now a different one.** A filtered query never delivers
+removals, so a hard delete elsewhere (Delete forever, or a purge) leaves that Note in our mirror
+forever with nothing to correct it — silent divergence, which is the exact class of failure 02 and
+03 spent themselves eliminating. Firestore's `persistentLocalCache` resume token solves the same
+read-cost problem *and* delivers removals correctly, is a one-line reversal this ticket already
+sanctioned, and needs no new field, no rules change and no proof. So the order of preference for
+the read-cost problem is: measure first (Builder's step 7), then `persistentLocalCache`, and only
+then a `serverSeq` watermark if the SDK cache is somehow unacceptable.
+
+Retrofit cost, checked: adding `serverSeq` later is cheap. Existing documents would hold null, and
+the migration is a single full re-read — which is exactly today's behaviour. So deferring this
+carries no trap.

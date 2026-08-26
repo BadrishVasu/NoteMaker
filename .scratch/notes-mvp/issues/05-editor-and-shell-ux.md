@@ -86,7 +86,8 @@ desktop screen real estate.
   save **must also flush** on editor unmount, on `blur`, on `visibilitychange → hidden`, and on
   `pagehide` — on Android the app is backgrounded far more often than it is closed, and a debounce
   timer that never fires is lost writing. There is no "Saved!" toast; the toolbar status is the whole
-  feedback. **Badrish has asked for a manual-save option on top of this — see "Open with Badrish".**
+  feedback. **On top of this there is a `Sync Now` button and an `Auto sync` setting — see
+  "Sync Now and Auto sync", settled by Badrish 2026-08-26.**
 
 ### The title field, and the latch
 
@@ -173,10 +174,23 @@ Only these. Broader first-run onboarding stays fog — see below.
 ### Body size (ticket 01 handed this to the editor)
 
 **Typing is never blocked.** Refusing keystrokes is the one thing a notes app may not do, and ticket
-03's mirror is ours and uncapped. It is the *sync* that fails and it fails visibly: over ~1 MiB the
-Note shows a persistent strip — *"This note is too large to sync (over 1 MB). Shorten it to sync."* —
-and stays out of the Outbox's clean state until it fits. It will never happen; it costs a few lines
-and the alternative is a silent commit-time failure.
+03's mirror is ours and uncapped. It is the *sync* that fails and it fails visibly: past the
+threshold the Note shows a persistent strip — *"This note is too large to sync. Shorten it to
+sync."* — and stays out of the Outbox's clean state until it fits. It will never happen; it costs a
+few lines and the alternative is a silent commit-time failure.
+
+**Corrected 2026-08-26 (`builder`): the threshold is ~450 KiB, not ~1 MiB.** The original number
+came from Firestore's 1 MiB document cap applied to a Note's own body, and it is wrong for every
+Note in this app. A Conflict copy under ticket 02 carries **its own content plus `conflictBase`, the
+fork-point content, in one document** — so a Note that conflicts needs roughly twice its own size to
+land. A 600 KiB Note is fine until the day it conflicts, at which point the copy exceeds the cap,
+the transaction fails permanently, the Outbox never drains, and the user's only signal is the strip
+at the bottom of the shell reassuring them their notes are safe on this device.
+
+Since any Note can conflict, the visible threshold must be the conflict-safe one: **~450 KiB of
+combined title and body**, leaving headroom for the document's other fields. One number, and it is
+the whole difference between a visible failure the user can act on and a silent stuck one they
+cannot see.
 
 ### Settled with Badrish, 2026-08-25
 
@@ -191,7 +205,56 @@ He reacted to the prototype. In his words, lightly split:
 - **Body focus on a new Note, and keeping untouched new Notes** — both confirmed. *"Focus on the body
   is ok, makes logical sense. Untouched new note is kept."*
 
-### Open with Badrish: the manual-save setting
+### Sync Now and Auto sync — settled by Badrish, 2026-08-26
+
+His words: *"We can have 'Push now' and auto push. Just rename to 'Sync Now' and auto sync."* And to
+UI/UX, as a standing naming instruction: *"Make the button 'Sync Now', other autosave options would
+be called auto sync then."*
+
+**The naming is binding across every artifact and every surface.** The button is **`Sync Now`**. The
+setting and everything in its family is **`Auto sync`**. Nothing in this product says "push" or
+"manual save" to a user — those are our words for our mechanism, and the user's word for the thing
+is sync. Where an older section of this ticket, `map.md`, or `architecture.md` still says *manual
+save* or *push*, it means this.
+
+**What ships:**
+
+1. **`Sync Now`** — a button, always present regardless of the setting, that forces an immediate
+   Outbox drain. It bypasses the debounce and resets the backoff timer. With Auto sync on it is
+   simply an impatience affordance; with Auto sync off it is the only thing that sends.
+2. **`Auto sync`** — a setting, **on by default**. On, the engine drains the Outbox on its normal
+   wake sources. Off, the engine drains **only** on `Sync Now`.
+
+**What does not change, which is the whole point of taking this shape.** `pendingRev` is minted at
+edit-time **unconditionally, in both settings** — the Mathematician's fix, recorded as the
+manual-send amendment on [ticket 02](02-conflict-copy-mechanism.md). The setting gates the
+`begin-push` *trigger* and nothing else. So:
+
+- 02's snapshot guard predicate stays exactly `pendingRev !== null`. It does **not** widen. The trap
+  that ui-ux caught — the other device's snapshot overwriting an unsent paragraph while the user
+  looks at it — cannot occur, because an edited Note is dirty from the keystroke in both settings.
+- 03's "the Outbox is a column" survives. No second stored field, no content hash, no `synced`
+  boolean.
+- **Everything is already durable in both settings**, and the copy must say so. A Note edited with
+  Auto sync off is in the mirror, in the Outbox, and will survive a kill, a crash and a month
+  offline. The setting controls when your words *leave this device*, never whether they are kept —
+  which is exactly why it is not called "save".
+- `blur` / `visibilitychange` / `pagehide` **force nothing extra in manual mode.** They flush to the
+  mirror as always; they do not send. Durability was never gated by the flush.
+
+**The one piece of copy this adds.** The bottom strip already reads `3 notes waiting to sync ·
+they're safe on this device`. With Auto sync off that first clause is true but reads like a fault,
+when it is the user's own setting doing exactly what they asked. So with Auto sync off and a
+non-empty Outbox the second clause becomes the action: `3 notes waiting to sync · Sync now`, with
+`Sync now` as the strip's tap target. (Note 03's third variant: while `storage.persist()` is denied
+*and* the Outbox is non-empty, the reassurance clause drops entirely. Three strip states, one
+sentence each.)
+
+**UI/UX owns placement at build step 6** — where `Sync Now` sits in the editor toolbar versus the
+list header, and where the `Auto sync` setting lives given this app has no settings screen yet. The
+naming and the semantics above are settled and are not theirs to revisit.
+
+### Superseded: the manual-save setting as originally read
 
 He asked for *"a setting that has manual save or auto save - on change in text and on delay."* The
 auto-save half is exactly what is specified above. The manual half is a genuinely new requirement and
@@ -218,7 +281,10 @@ presses the button. Concretely, that is one deferral: **`pendingRev` is minted a
 instead of at edit-time.** 02's three equality tests, its conflict branch, both of its `baseRev`
 traps and 03's "Outbox is a column" all survive untouched.
 
-**The one trap this introduces, which must not be missed.** 02's rule is that an incoming
+**The one trap this introduces, which must not be missed.** *(Real, but dissolved — it exists only
+under this section's candidate plan of deferring the `pendingRev` mint to button-press. The shipping
+design mints at edit-time unconditionally, so the guard below never widens. Kept because the
+reasoning is why the shipping design has the shape it has.)* 02's rule is that an incoming
 `onSnapshot` must never overwrite a *dirty* Note's local body, and 03 defines dirty as
 `pendingRev !== null`. A manually-unsaved Note has `pendingRev === null` and would therefore be
 **silently overwritten by the other device's snapshot** — the user's unsent paragraph vanishing while
@@ -237,9 +303,12 @@ owner and a file.
 
 **Recommendation:** build the setting as described — it controls when your words *leave this device*,
 not whether they are kept — and label it in those terms rather than as "save", because "save" implies
-the other setting can lose text, which is never true. Awaiting his call; the flush-on-`blur` /
-`visibilitychange` / `pagehide` behaviour also needs his answer, since in manual mode those must
-still flush to the mirror and must **not** push.
+the other setting can lose text, which is never true.
+
+**Answered.** See "Sync Now and Auto sync" above: the reading was accepted, the seam moved from the
+`pendingRev` mint to the `begin-push` trigger on the Mathematician's correction, and the names are
+Badrish's. The `blur` / `visibilitychange` / `pagehide` question is answered there too — they flush
+to the mirror in both settings and send in neither.
 
 ### Deliberately not decided here
 

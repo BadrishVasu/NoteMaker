@@ -109,9 +109,11 @@ response in the file itself.
   WYSIWYG, because 11's merge works on source. **There is one mode and it is Write** (Badrish cut the
   Write/Read pair); preview survives only as an invoked action, and split-pane died with it. Saving is
   debounced and *must* flush on blur, `visibilitychange` and `pagehide` or Android backgrounding eats
-  writes. **Badrish asked for a manual-save setting, still open** — the only honest reading is that it
-  gates the *push*, never the mirror write, which widens 02's snapshot guard from `pendingRev !== null`
-  to also cover locally-unsent content, or the other device's snapshot eats the unsent paragraph.
+  writes. **Badrish's manual-save request shipped as `Sync Now` + `Auto sync`, settled 2026-08-26** —
+  a button that forces an immediate drain, and an on-by-default setting that gates only the
+  `begin-push` *trigger*. `pendingRev` is still minted at edit-time in both settings, so 02's
+  snapshot guard stays exactly `pendingRev !== null` and does **not** widen. The names are binding
+  everywhere: nothing user-facing says "push" or "manual save".
   The title latch is taught by the field itself — Derived means the input is **empty and
   the resolved title is its placeholder**, so the first keystroke is the latch and grey-versus-solid
   is the whole explanation; the one state that gets copy is Custom-but-emptied, where the user is
@@ -124,8 +126,10 @@ response in the file itself.
   device has **no loading state at all**. Oversized bodies never block typing; only the sync fails,
   visibly. Prototype: [prototypes/05-shell/index.html](../prototypes/05-shell/index.html) (throwaway).
 - [07 · PWA service worker](../issues/07-pwa-service-worker.md): `generateSW`, no runtime caching
-  (Firestore uses IndexedDB, not Cache Storage); precache Vite's hashed shell only; update mode
-  (`autoUpdate` vs `prompt`) must be chosen before first deploy, not switched later; Android
+  (Firestore uses IndexedDB, not Cache Storage); precache Vite's hashed shell only; **update mode is
+  `prompt`** — Badrish, 2026-08-26, owned by ticket 10 because that is the ticket that ships the
+  first build and locks the choice (`autoUpdate` can swap the app out mid-sentence in an editor);
+  Android
   install needs 192/512 icons plus a maskable icon. **Firestore persistence cannot run inside a
   service-worker scope at all** — sync only happens while the app is open, no background sync;
   relevant to ticket 02. Detail: [research/07-pwa-service-worker.md](../research/07-pwa-service-worker.md)
@@ -138,14 +142,19 @@ response in the file itself.
 
 ## Not yet specified
 
-- Note list ordering, and whether pinning exists at all
-- Whether the 30-day Trash purge runs client-side on open, or needs a scheduled Cloud Function
+- Note list ordering, and whether pinning exists at all *(Builder has taken `updatedAt desc`, no
+  pinning, as an execution call — one comparator, trivially reversible. Still fog as a product
+  question.)*
 - Behaviour at large Note counts: when client-side search and a full local mirror stop being viable
 - First-run experience: any *onboarding* beyond the bare empty-account screen 05 settled
 - Empty, loading and error states beyond the shell ones 05 settled (it covered downloading vs empty,
   no results, offline sign-in, oversized body — not everything)
 - Android integration beyond installability: share-target intent (back-button behaviour graduated
   out of here into ticket 12)
+- *(The 30-day Trash purge graduated out of here into [ticket 13](../issues/13-trash-purge.md),
+  2026-08-26, on Badrish's instruction to ticket it properly. Deferred out of the v1 slice: the
+  Trash simply grows, which costs nothing at this corpus size. Note the product currently **promises**
+  the purge in two strings in ticket 05 — 13 either implements the sentence or deletes it.)*
 - Note export and backup — getting the corpus out
 
 ## Out of scope

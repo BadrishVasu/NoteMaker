@@ -71,8 +71,8 @@ src/
     note.ts           NoteDoc (ticket 01's shape), LocalNote = NoteDoc + baseRev + pendingRev
     title.ts          resolveTitle / isDefaultTitle / nextUntitledN   (01 + 05)
     reconcile.ts      02's three equality tests + the conflict branch → PushAction
-    applySnapshot.ts  02's two model-checked traps live entirely here
-    conflictCopy.ts   deterministic copy id, pristine guard, conflictOf / conflictBase
+    applySnapshot.ts  the 14-cell table from 02's appendix; pure, takes/returns lastServerState too
+    conflictCopy.ts   copyId/rev derived from the flight token (02 appendix defect 2) + conflictBase
     projection.ts     corpus → list view / trash view / search results   (06 lands here)
 
   store/        the mirror (ticket 03)
@@ -84,7 +84,10 @@ src/
     remoteGateway.ts   the port (above)
     firestoreGateway.ts  ONLY file importing firebase/firestore
     fakeGateway.ts       in-memory server with interleaving hooks
-    engine.ts            the loop; owns backoff; consults no clock and no navigator.onLine
+    engine.ts            the loop; owns backoff, owns lastServerState (below); consults no clock,
+                          no navigator.onLine
+    lastServerState.ts   Map<noteId, {rev,title,titleIsCustom,body,deletedAt}>, in-memory only —
+                          ratified below, this is new since 03 closed
     corpus.ts            in-memory whole corpus + subscribe(); the UI's single read surface
 
   platform/     browser and vendor glue, thin
@@ -102,6 +105,28 @@ src/
 because reconciliation reads no time. `updatedAt` is stamped at the edge, in the save path, and
 passed *in* as data. If a `Date.now()` ever appears under `domain/`, the property 02 proved has
 quietly stopped holding.
+
+## `lastServerState` — ratified addition, 2026-08-25
+
+The Mathematician's extended check (`02` appendix, defects 1–3) found the original mechanism as
+specified would leave a clean row permanently stale, because the conflict branch deliberately writes
+no correcting snapshot. The fix needs a map of the last snapshot seen per Note, independent of
+dirtiness, and asked me to ratify where it lives since 03 specified the row as "`baseRev`,
+`pendingRev`, nothing else."
+
+**Ratified: in-memory only, owned by `sync/engine.ts`, not persisted, and not part of the store
+row.** This does not reopen ticket 03's stored schema — 03's own reasoning already covers it: 03
+carries no resume token and re-reads the whole subcollection on every app open, so on a fresh tab
+`lastServerState` rebuilds itself from the first batch of snapshots before any push can race it. The
+only place it would matter un-rebuilt is mid-session after a conflict branch, which is exactly the
+case the map exists to fix. Persisting it would be state that can silently go stale across a
+restart for no benefit `store/` doesn't already provide by other means; keeping it in memory means
+it is always either correct or freshly empty, never wrong.
+
+Consequence for the module table below: `firestoreGateway.runPush`'s `decide` callback closes over a
+snapshot of the relevant `lastServerState` entry at call time (still pure — the map read happens in
+`engine.ts`, the decision function itself receives it as an argument), matching the appendix's
+"fall back to the transaction read only while `initialSyncCompletedAt` is unset" rule.
 
 ## Data flow — one direction each way
 
@@ -122,8 +147,11 @@ a crash between the two loses a re-render, never a keystroke.
 | Constraint | Owner in this architecture |
 |---|---|
 | 02: every Note write via `runTransaction` | `firestoreGateway.runPush`, the sole firebase importer |
-| 02: `baseRev` only advances to a rev we pushed | `engine.ts`, applying `PushOutcome` |
-| 02: snapshots never advance `baseRev`, never overwrite a dirty body | `domain/applySnapshot.ts`, pure |
+| 02: `baseRev` only advances to a rev the listener delivered (clean) or this device pushed | `engine.ts`, applying `PushOutcome` per the appendix's 14-cell table |
+| 02: snapshots never overwrite a dirty body, but do always record `lastServerState` | `domain/applySnapshot.ts` (pure), `sync/lastServerState.ts` (in-memory, owned by `engine.ts`) |
+| 02 appendix: copy id/rev keyed off the flight token, not existence+pristine | `domain/conflictCopy.ts` |
+| 02 appendix: Outbox slot migrates only onto the copy this push just wrote | `engine.ts`, applying `PushOutcome.conflictCopy` |
+| 02 appendix: per-Note pushes parallelise freely; one in-flight push per Note | `engine.ts` — a `Map<noteId, Promise>` gate, nothing more |
 | 02: editor follows the content, not the id | `corpus.ts` emits a redirect event; `Editor` does `history.replaceState` (05 §conflict redirect) |
 | 03: whole corpus in memory, no queries | `corpus.ts`; `projection.ts` filters arrays |
 | 03: Outbox is `pendingRev !== null` | `LocalNote`, one row, one atomic put |
@@ -286,14 +314,109 @@ invariants do not move at all. Raised with him; not mine to settle.
   summoning specialists there would cost coordination and buy nothing. I bring in Frontend and
   UI/UX at step 6, QA at step 5, Operations only if the Pages pipeline fights back.
 
-## For the Mathematician
+## Read cost and the server clock — designer, 2026-08-26
 
-One thing here is worth your scrutiny and I would rather ask than assume. 02's proof covers the
-*mechanism*; this document commits it to a specific async shape, and the shape is where a proof
-usually leaks. Specifically: `runPush(uid, noteId, decide)` runs the pure reconcile **inside** a
-Firestore transaction callback that Firestore may re-execute on contention, with a fresh server
-read each attempt but the same closed-over `baseRev`, `pendingRev` and content. Does that preserve
-the atomicity the model assumed, or does re-execution admit an interleaving the model ruled out —
-particularly against the rule that `baseRev` may only advance to a rev this device pushed? I believe
-it holds because every retry is just another instance of "the server changed under us", which the
-model already covers, but this is exactly the class of thing I was wrong about before.
+Attaches to the Builder's "one number in 03 I think is optimistic" above. Badrish asked why the base
+clock we compare against can't be the server's. **No change to this architecture.** `domain/` still
+reads no clock, `reconcile` is still three equality tests on locally-minted tokens, and `rev` cannot
+become a server timestamp — the push must know the token it is writing before the round trip, or a
+retry after a lost response cannot recognise its own landed write.
+
+What the question does change is 03's *stated reason* for killing the watermark, which was
+client-clock skew and therefore does not apply to a server-stamped field. Full amendment on ticket
+03. It stays unadopted because a filtered query never delivers removals, and `persistentLocalCache`
+is the cheaper, correct fix for the same read cost. **Builder: your step-7 measurement is now the
+deciding input for this, not just a sanity check** — if reads per open come in where you expect,
+the reversal is the one line 03 already sanctioned, and the watermark stays off the table.
+
+## For the Mathematician — answered
+
+Asked whether `runPush`'s transaction-callback shape preserves 02's proof under Firestore's
+re-execution-on-contention. Answer came back sharper than the question: the original check hadn't
+modelled `onSnapshot` at all, and the corrected, lineage-based property (P1b) found three real
+defects once it was added — appendix on `02`. All three are folded into this document above
+(`lastServerState`, the flight-token copy id, and the "only adopt what this push just wrote"
+migration rule). Also confirmed: per-Note pushes are independent and safe to parallelise, and
+`applySnapshot` still needs no knowledge of in-flight pushes — the pure-seam bet holds.
+
+**Owed before code ships**, per the appendix's "accepted, not fixed" section: a test asserting that
+`delete-lost` discards unsynced edits made *before* the delete in the same dirty episode. Named so
+here so it isn't later mistaken for a bug and "fixed" back into a Conflict copy nobody asked for.
+`sync/engine.test.ts` or wherever 09 lands its `delete-lost` coverage.
+
+## Builder's addendum — gaps closed, 2026-08-26
+
+Badrish answered the three open questions and the Mathematician's appendix answered two of my seven
+gaps outright. This section closes the rest. **Step 0 starts now**; ticket 10 carries the full deploy
+configuration and this document's build order is otherwise unchanged.
+
+### Closed by the Mathematician's appendix, not by me
+
+- **Gap 5, push concurrency across Notes.** Answered: per-Note independence is total. I withdraw the
+  serialised drain I had taken as a holding position — `engine.ts` gets the `Map<noteId, Promise>`
+  gate this document already specifies, one in-flight push per Note and free parallelism across
+  Notes.
+- **Gap 7, `applySnapshot` with an absent `serverDoc`.** Answered by the 14-cell table and its
+  dedicated section. Cell 7 — dirty row, server document gone — is a **no-op that keeps the row and
+  its dirt**, and that is the cell ticket 13's purge must not be allowed to break.
+
+### Gap 1, `deviceId` — taken as mine
+
+Minted once per uid, stored in the `meta` object store beside `initialSyncCompletedAt`, from
+`crypto.randomUUID()`, **truncated to its first 8 characters**, never rotated. Read at engine start;
+if absent, minted and written before the first push can run.
+
+Short because it goes into a Firestore document id — the copy id is
+`<noteId>__c<deviceId>__<flightRev>` — and Firestore caps a document id at 1500 bytes. A Conflict
+copy can itself conflict, which nests the pattern, so the id must be *checked* against the cap at
+mint time rather than assumed safe: with 8-character device ids the nesting depth available is
+comfortable, but "comfortable" is not "verified", and the check is three lines in
+`domain/conflictCopy.ts` where it can be unit-tested with no infrastructure.
+
+One consequence, stated so it is a decision rather than a discovery: **a mirror eviction regenerates
+the `deviceId`**, and the same physical device then presents as a new one. Since the Mathematician's
+fix already keys the copy id on the flight token rather than on device identity alone, this costs
+nothing beyond an unfamiliar-looking id. It is not worth persisting elsewhere.
+
+### Gap 3, the push trigger — taken as mine, and it is `engine.ts`-local
+
+I asked for this to be blessed rather than inherited. Nobody has contested it, it is entirely
+internal to one file, and reversing it costs one function — so I am taking it and recording it here
+so nobody has to re-derive it:
+
+- **Wake sources:** a local edit; `visibilitychange → visible`; **snapshot delivery**; and a backoff
+  timer. Snapshot delivery is the one honest connectivity oracle this design permits — it is
+  evidence the transport is up rather than a claim about the network, which is the distinction
+  ticket 02 removed `navigator.onLine` to protect.
+- **Backoff:** 1s, doubling, capped at 60s. Reset on any successful push **or** any delivered
+  snapshot.
+- **Hard per-push timeout, 10s.** `runTransaction` retries internally and under a flaky connection
+  can hang far past a user's patience. Without a timeout one wedged push holds its Note's gate
+  indefinitely. With per-Note parallelism this no longer blocks the whole drain, which is a second
+  reason the appendix's answer was worth having.
+- **`Sync Now` (ticket 05) is a fifth wake source** that additionally resets the backoff timer, and
+  with `Auto sync` off it is the *only* one. The setting gates the trigger; it never gates the
+  `pendingRev` mint, the mirror write, or the guard predicate.
+
+### Naming, binding on every surface — Badrish, 2026-08-26
+
+The user-facing button is **`Sync Now`** and the setting family is **`Auto sync`**. Where this
+document says *push* it is describing our mechanism and that is fine in `sync/`; where a string
+reaches a user it says sync. `05` carries the full spec.
+
+### Service worker: `registerType: 'prompt'`
+
+Badrish's call, 2026-08-26. It lives in `vite.config.ts`'s `vite-plugin-pwa` block — "nothing in app
+code" in the table above stays true except for the one reload affordance, which is UI/UX's at step
+6 and shares the shell's bottom strip region with `N notes waiting to sync`. Ticket 10 holds the
+reasoning and the consequences.
+
+### Still owed by the Designer, and when it starts blocking
+
+**The literal `NoteDoc` / `LocalNote` types, field by field**, marking local-only fields (`baseRev`,
+`pendingRev`) and Conflict-copy-only fields (`conflictOf`, `conflictBase`). Step 0 does not need
+them and step 1 (`domain/title.ts`) barely does. **They block step 2**, the `store/` contract suite,
+because that suite is a commitment to the row shape. That is the deadline, and it is close.
+
+Meanwhile ticket 01's field list is now amended to the full nine-field set including `rev`,
+`conflictOf` and `conflictBase`, so the security rules and the types have one source to agree with.

@@ -275,3 +275,214 @@ existing limit.
 
 **Verdict: no change to the reconcile mechanism, the guard predicate, or the document schema.**
 Manual send is implemented one layer up, in the flush trigger, not in 02's transaction or guard.
+
+## Appendix — re-verification with `snapshot-delivered` (mathematician, 2026-08-25)
+
+Builder challenged the Verification section above: it lists four event kinds — `edit`, `delete`,
+`begin-push`, `commit-push` — and no snapshot, yet the second trap is about snapshots. The
+challenge is correct. **`snapshot-delivered` was not in the original model; the two snapshot rules
+above were reasoned, not checked.** The model has been extended and re-run. It found **three
+defects**, one a permanent divergence and two silent data loss. All three are corrections to this
+ticket, not to ticket 03.
+
+### What the extended model covers
+
+Two devices, one server, one primary Note plus its Conflict copies. Events: `edit`, `delete`,
+`begin-push`, `commit-push`, `lose-response`, `snapshot-delivered`, `purge`. The push is split so
+the server-side transaction executes atomically at `begin-push` while local bookkeeping happens at
+`commit-push` — that is what makes "typed during the flight" and "response lost" reachable.
+Snapshot delivery is a per-device FIFO queue that coalesces beyond depth *k*; both *k*=1
+(coalescing only) and *k*=2 (in-order **stale** delivery) were run, because a transaction read is
+fresher than the listener stream and that gap turns out to matter.
+
+Properties, sharpened from this ticket's three:
+
+- **P1** — no content token vanishes unless its own author superseded it (a later edit, or a delete,
+  on the same row), or it was legitimately overwritten, or the user purged it.
+- **P1b** — *a server write may only destroy content it is descended from.* This is the sharp form
+  of "no write destroys content the writing device never observed", and it is what catches the
+  `baseRev` class of bug. The weaker "the writer had observed that rev" does **not** catch it.
+- **P2** — from every reachable state, driving to quiescence converges both devices and the server
+  to an identical corpus with no row left dirty.
+- **P4** — a Conflict copy is never born pointing at a document that does not exist.
+
+Exhaustive to **depth 8 across four configurations (713,911 / 722,771 / 723,579 / 732,375 states)
+and to depth 9 on the recommended configuration (5,466,627 states). All properties hold.** Every visited state is additionally driven to quiescence and re-checked, with an
+app reopen appended — 03 has no resume token, so every open re-reads the whole subcollection, and
+that re-read is load-bearing for convergence in one corner (below). The rejected alternatives below
+each fail the model under the corrected design, so these are discriminated decisions, not taste.
+
+### Defect 1 — `commit` must never populate the local row from the transaction's read
+
+**Permanent divergence, found as P2.** The `fast-forward`, `delete-lost` and `conflict` branches
+adopt "the server version". If they adopt the value read inside the transaction, they can move a
+clean row *behind* the listener — and no correction follows, because in the conflict branch the
+surviving Note is deliberately **not** written and so generates no snapshot. The device displays
+stale text indefinitely.
+
+**Fix.** Keep an in-memory `lastServerState: Map<noteId, {rev, title, titleIsCustom, body,
+deletedAt}>`, updated by **every** snapshot in **every** cell — including for dirty rows, where
+nothing else about the row changes. This is exactly what this ticket already asked for with
+"snapshots … record observed server state"; ticket 03's row shape (`baseRev`, `pendingRev`,
+"nothing else") quietly dropped it. It does **not** need an IndexedDB column: 03 re-reads the whole
+subcollection on every app open, so the map rebuilds from the first snapshot before any push can
+matter.
+
+Those three branches then adopt from `lastServerState`, falling back to the transaction read only
+while 03's `initialSyncCompletedAt` is unset. After the first snapshot the map is a complete picture
+of the server, so **an absent entry means the document is gone** and the local row is deleted rather
+than re-materialised from a stale transaction read.
+
+Safe in both directions: if the map is current we adopt the truth; if the map is behind, the
+document changed after we last heard about it, so a delivery is already guaranteed to follow and
+will correct us.
+
+### Defect 2 — the deterministic copy id plus the pristine guard loses data
+
+**Silent data loss, found as P1b.** Trace: a device conflicts on `N`, its text moves to
+`N#c<device>`, and its outbox slot migrates with it. It then edits `N` again — from the *adopted
+server* content — and conflicts a second time. The copy on the server is still pristine, because the
+user never edited it, so `updatedAt === createdAt` and the guard permits the coalescing overwrite.
+But the second conflict's text is **not** descended from the first's: the lineage forked the moment
+the outbox slot migrated. The first copy's content is destroyed. This ticket's justification — "that
+same device's own linear later state" — is false on that path.
+
+**Fix, which also retires the pristine guard.** Derive **both** the copy id and the copy's `rev`
+from the flight token:
+
+- `copyId = <noteId>__c<deviceId>__<flightRev>`
+- `copy.rev = flightRev`
+- the transaction writes the copy **only** if that document is absent, or is already at
+  `rev === flightRev`. Any other rev means somebody has edited it since — write nothing, because our
+  content is that content's ancestor and is therefore legitimately superseded.
+
+Idempotent under a retry and under a second tab (same row, same `pendingRev`, same id and rev),
+distinct across two independent conflicts, and the `updatedAt !== createdAt` guard disappears
+entirely. Cost: repeated conflicts from one device no longer coalesce into one copy. That coalescing
+*was* the bug — each copy holds genuinely unmerged content and each is owed.
+
+### Defect 3 — the outbox slot may only migrate onto the copy we just wrote
+
+**Silent data loss, found as P1b.** The migration target can be occupied: the copy row may already
+have arrived by snapshot and been edited by the user, or gone clean at a *newer* rev after that edit
+was pushed. Testing only "is the copy row dirty" is not enough — a copy row that is clean at some
+other `baseRev` still holds content that is not ours.
+
+**Fix, and it generalises this ticket's `delete-lost` trap into a rule.** The slot migrates only if
+the copy row is absent, or (`pendingRev === null` **and** `baseRev === copyRev` — i.e. it is exactly
+the pristine copy this transaction just wrote). Otherwise, and in every case where the user typed
+during the flight and the target is not free, **the local row does not adopt the server at all**: it
+stays dirty at its old `baseRev` and re-evaluates on the next push, which produces a second copy
+keyed by the new flight token. Lossless; the cost is one extra copy in a corner.
+
+The rule, stated once: *a branch that did not write our content never advances the row's `baseRev`
+and never adopts the server, unless the row is still exactly what we pushed.* This ticket stated it
+for `delete-lost` only. It holds for `fast-forward` and `conflict` too.
+
+### `applySnapshot(localRow, serverDoc) -> localRow` — the complete table
+
+Pure. **It does not need to know whether a push is in flight** — every in-flight cell is identical to
+its not-in-flight twin, which preserves ticket 03's pure seam. Every cell, in every row state, also
+updates the in-memory `lastServerState` (present ⇒ record; absent ⇒ delete the entry). That side
+effect is Defect 1's fix, and it is the only thing a snapshot does to a dirty row.
+
+| # | local row | serverDoc | action | reachable? |
+|---|---|---|---|---|
+| 1 | absent | absent | no-op | yes — removed event for a Note never mirrored |
+| 2 | absent | present | insert clean row from `serverDoc`; `baseRev := rev` | yes — new Note from the other device; first sync |
+| 3 | clean | absent | **delete the local row** | yes — purge or Delete forever elsewhere |
+| 4 | clean | `rev === baseRev` | no-op; assert content already identical | yes — re-delivery |
+| 5 | clean | `rev === pendingRev` | — | **unreachable**: clean *is* `pendingRev === null`. Assert. |
+| 6 | clean | neither | adopt content; `baseRev := rev` | yes — the other device edited |
+| 7 | dirty | absent | **no-op** — keep the row and its dirt | yes — purge/Delete forever while we hold an edit |
+| 8 | dirty | `rev === baseRev` | no-op | yes — server still at our fork point |
+| 9 | dirty | `rev === pendingRev` | **clear dirty**: `baseRev := rev`, `pendingRev := null`, content untouched (assert equal) | yes — our own write returning; lost response; second tab |
+| 10 | dirty | neither | **no-op.** Do not touch content. Do not advance `baseRev`. | yes — this ticket's trap |
+| 11–14 | dirty, push in flight | (all four) | **identical to 7–10** | yes |
+
+`serverDoc` absent factors out the rev comparison entirely, so "absent row × rev" is not a cell.
+
+**This ticket's wording needs one correction.** "An incoming `onSnapshot` must never advance
+`baseRev`" is true only for *dirty* rows. For a clean row, advancing `baseRev` is the entire
+mechanism (cells 2, 4, 6); implementing that sentence literally breaks sync. The precise invariant:
+
+> `baseRev` may only ever be set to a rev the listener delivered for a clean row, or to a rev this
+> device itself wrote.
+
+That invariant is also what makes cell 6 always a *forward* adopt, since listener deliveries are
+monotone per document.
+
+### Snapshot delivering our own write (cell 9): clear dirty
+
+Both policies pass every property at depth 8 under both queue depths, so this is decided on quality,
+not safety. The answer is **clear dirty**.
+
+- Provably content-safe. Rev tokens are unique and locally minted, and a local edit always mints a
+  fresh one, so `pendingRev` always names the row's *current* content. The server can hold
+  `rev === pendingRev` only because our push wrote exactly that content. Advancing `baseRev` there is
+  advancing to a rev this device wrote — precisely what the trap permits.
+- With "ignore", a **lost transaction response** leaves the row dirty; if the other device edits on
+  top of our landed write before our retry, the retry sees a rev matching neither token and writes a
+  **spurious Conflict copy of content that already landed and was already superseded**. "Clear"
+  removes that path.
+- The push path is not robbed of ownership, because the two paths cannot disagree. Only the
+  *already-landed* and *clean-push* branches can produce `srv.rev === pendingRev`, and both apply
+  exactly the transition the snapshot just applied. `commit` must therefore treat
+  `pendingRev === null` as a no-op. Two tests: commit-after-snapshot-cleared is a no-op;
+  snapshot-after-commit is a no-op.
+
+### `serverDoc` absent with a dirty row: recreate, do not write a Conflict copy
+
+This ticket's stated consequence — "a device offline past the 30-day purge recreates its text as a
+live Conflict copy" — is right in intent and **wrong in mechanism**. Running the model with that
+rule fails P4 in eight steps: the copy is born pointing at a document that does not exist.
+
+`applySnapshot` does nothing (cell 7). The **push** resolves it, and it is not a conflict:
+
+- `baseRev === null` → ordinary create.
+- the flight is a delete → the outcomes agree; write nothing, delete the local row.
+- otherwise → **recreate at `noteId`**, `rev := pendingRev`. There is no surviving sibling, so
+  nothing is displaced and nothing is owed a pointer. Idempotent: a retry sees
+  `srv.rev === pendingRev` and takes the already-landed branch.
+
+Separately, and independent of this decision: **`conflictOf` can dangle anyway.** A copy created
+legitimately against a live sibling dangles the moment that sibling is purged or deleted forever;
+the model reaches this in six steps. **`conflictOf` is a soft pointer and ticket 11's UI must
+tolerate a missing target.** Do not add referential machinery.
+
+Accepted limit: a purge that lands *after* our recreate wins, and the recreated text is gone. The
+user pressed Delete forever; that is not silent loss.
+
+### Concurrent pushes across Notes: per-Note independence is total
+
+The read set and the write set of a push for Note `X` are both contained in
+`{X, copyId(X, thisDevice, flightRev)}`, and both members are functions of `X` and this device. For
+`X ≠ Y` the sets are disjoint, so **no cross-Note invariant exists and pushes parallelise freely.**
+The only serialisation requirement is per-Note: **at most one in-flight push per Note**, or two
+flights race the same row's bookkeeping. Bound total concurrency for quota and backoff reasons if
+you like, but not for correctness.
+
+Two things that look like cross-Note coupling and are not: ticket 01's `Untitled Note N` scan can
+pick the same number on two devices at once (duplicate titles are already legal per this ticket),
+and the mirror's IndexedDB writes are per-row.
+
+### Behaviour accepted rather than fixed
+
+- **A one-delivery regression window.** A snapshot already in flight when we commit our own write can
+  deliver the pre-write state to a now-clean row, so it briefly shows older content. Our write
+  guarantees a following delivery, so it heals within one snapshot. All properties hold with stale
+  delivery enabled; the cost is a flicker, never loss.
+- **A purge racing a push** can strand one device on a stale clean row until the app is reopened.
+  03's no-resume-token full re-read on every open is what heals it — the model's convergence check
+  includes that reopen for this reason. This is a real dependency of 02 on 03's accepted price.
+- **`delete-lost` discards unsynced edits made *before* the delete in the same dirty episode.** If
+  the user types offline, then deletes offline, and the delete loses, that text is gone. Deliberate:
+  the user's last expressed intent for it was to delete it, and preserving it would mean a Conflict
+  copy of text they threw away. Ticket 09 should assert the discard, so nobody "fixes" it later.
+
+### Limits of this run
+
+Two devices; one primary Note plus its copies; no interactive merge; title and `titleIsCustom` ride
+with content rather than being modelled separately; fast-forward on independently-identical text is
+not exercised, since tokens are unique by construction (it is a no-op branch either way); no third
+device. Depth 9. The spike is throwaway and deliberately not committed.

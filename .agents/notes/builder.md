@@ -1,5 +1,78 @@
 # Builder's notebook — NoteMaker
 
+## 2026-08-26 — answers landed, step 0 built, first code in the repo
+
+Badrish answered all three. The org stopped specifying and started building.
+
+### What I got wrong, and want to remember
+
+**My flat-config ESLint boundary silently didn't work.** I layered four config objects each
+declaring `no-restricted-imports`, assuming they'd merge. They don't — a later matching object
+**replaces** the rule wholesale. Net effect: the firestore boundary was disabled for most of `src/`
+and the `domain/` purity rules were disabled entirely, while `npm run lint` reported a clean tree.
+
+The only reason I know is that I wrote the boundary test *first*, with negative controls, exactly as
+the pinned credential-hook memory says to. A guard that matches nothing and a codebase with no
+violations look identical from outside. This is the second time on this project that lesson has paid
+out, and it is the strongest argument I have for why the import boundary needed a test rather than a
+code review. **Every enforcement mechanism gets tested in both directions. No exceptions.**
+
+Config that "looks obviously right" is exactly where this hides, because nobody writes tests for
+config. `src/test/importBoundary.test.ts` is where that now lives.
+
+### Judgement calls I took alone, and why I think each was mine
+
+- **`initializeFirestore` moved from `platform/firebase.ts` into `sync/firestoreGateway.ts`.** The
+  Designer's module table put it in `platform/`, which would have required an exception to my own
+  import boundary on day one. A boundary with one sanctioned exception grows a second. Nothing
+  outside the gateway needs a Firestore handle, so the move costs nothing and makes the rule
+  absolute. Small, reversible, strengthens his own stated rule — took it, recorded it in the file.
+- **`deviceId`**: `meta` store, per-uid, `crypto.randomUUID()` truncated to 8 chars, never rotated,
+  with a length check on the composed copy id. Short because it lands in a Firestore document id
+  and a conflict-of-a-conflict nests the pattern. Considered sending this to the Mathematician
+  against my own trigger list — it *is* in a document id, which is permanent. Concluded no: the copy
+  id **scheme** was already fixed by his appendix (`<noteId>__c<deviceId>__<flightRev>`), so I was
+  only choosing where the value is stored and how long it is. That's storage, not scheme.
+- **Push trigger policy** taken as mine — it is `engine.ts`-internal and reversing it is one
+  function. Nobody contested it in two sessions; waiting longer would have been deference theatre.
+- **Preview deployments can't sign in, accepted rather than fixed.** The alternative widens the API
+  key's referrer allowlist across every generated subdomain forever, and Firebase Auth wouldn't
+  wildcard the domain anyway. Previews prove the build; production proves auth.
+
+### Two of my seven gaps closed without me
+
+The Mathematician's appendix answered gap 5 (per-Note pushes are fully independent — I withdrew my
+serialised-drain holding position) and gap 7 (`applySnapshot` with an absent `serverDoc` — cells 1,
+3, 7 of the table). Worth noting how that went: I raised both, held a safe default on one, and got
+better answers than I'd have reached alone. **Cell 7 — dirty row, server doc gone, no-op — is the
+one ticket 13's purge must not be allowed to break**, and I wrote that into 13 so it isn't
+rediscovered.
+
+### Dead ends and things not to re-open (adds to the list below)
+
+- **Layered ESLint rule declarations.** See above. Each scope declares its complete set.
+- **Automating the Firestore rules deploy in CI.** Needs a `FIREBASE_SERVICE_ACCOUNT` secret to save
+  perhaps three deploys over the project's life. Bad trade today; becomes good the moment rules
+  churn, and then it is a ticket. The guard that matters is the emulator test, which needs no secret.
+- **A second Firebase project for previews.** Own provisioning, own rules deploy, own allowlist, for
+  a preview that still couldn't authenticate.
+
+### Corners cut, stated rather than hidden
+
+- **The PWA icons are placeholder art** — three generated PNGs, a page glyph on the theme colour.
+  They are real, valid, correctly sized files and the install will work; they are not designed.
+  Real icons are UI/UX's at step 6.
+- **`firestore.rules` does not exist yet**, so `npm run rules:deploy` would fail today. Deliberate:
+  rules land at step 5 with their emulator tests written first, per ticket 01's amended field set.
+  Writing them now would be implementation ahead of a test.
+
+### Where I am
+
+Step 0 is built and verified locally — tests, lint, typecheck, production build, and the page
+mounting in a real browser with auth state resolving. It is **not deployed**, and that is on two
+Cloudflare dashboard actions only Badrish can perform. Step 1 (`domain/title.ts`) is unblocked and
+needs nothing from anyone. Step 2 blocks on the Designer's literal `NoteDoc`/`LocalNote` types.
+
 ## 2026-08-25 — read the whole decision record, responded to the architecture
 
 First session. Read 01–12, CONTEXT.md, the map, designer's and ui-ux's notebooks, and the Designer's

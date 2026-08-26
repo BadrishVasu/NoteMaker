@@ -20,24 +20,47 @@ one.
 - [ ] `domain/conflictCopy` — deterministic id, pristine guard, `conflictOf` / `conflictBase`
 - [ ] `sync/engine` — the drain loop, wake sources, backoff
 - [ ] `sync/firestoreGateway` + emulator: real transaction semantics
-- [ ] Ticket 09's guard: no Note write outside `runTransaction`
+- [x] **Ticket 09's import-boundary guard is built and passing** — `src/test/importBoundary.test.ts`,
+      landed at step 0 rather than step 5. Tested in both directions, with negative controls; it
+      immediately caught the boundary silently not working (layered ESLint config objects replace
+      `no-restricted-imports` rather than merging it).
+- [ ] The second half of 09's guard: an intra-file assertion that `runTransaction` is the only write
+      path *inside* `firestoreGateway.ts`. The boundary stops the call being written elsewhere, not
+      being written wrongly there. Lands with the gateway at step 5.
 
 ## Decisions
 - Import boundary replaces 02's name list: only `sync/firestoreGateway.ts` may import
   `firebase/firestore`, enforced by ESLint. Needs a second intra-file assertion that `runTransaction`
   is the only write path there — a name list cannot anticipate `addDoc`/`writeBatch` — builder —
   2026-08-25
-- Outbox drain is serialised until per-Note push independence is confirmed — builder — 2026-08-25
+- ~~Outbox drain is serialised until per-Note push independence is confirmed~~ — **withdrawn
+  2026-08-26**: the Mathematician's appendix confirms per-Note independence is total. `engine.ts`
+  gets a `Map<noteId, Promise>` gate — one in-flight push per Note, free parallelism across Notes.
 - Snapshot delivery is the push loop's connectivity oracle; `navigator.onLine` stays dead — builder —
   2026-08-25
+- **Push triggers**: wake on a local edit, `visibilitychange → visible`, snapshot delivery, a backoff
+  timer, and `Sync Now`. Backoff 1s doubling to 60s, reset on any successful push or any snapshot.
+  **Hard 10s per-push timeout** — `runTransaction` retries internally and can hang far past a user's
+  patience — builder — 2026-08-26
+- **`deviceId`**: `meta` object store, per-uid, `crypto.randomUUID()` truncated to 8 chars, never
+  rotated; the composed copy id is length-checked against Firestore's 1500-byte doc-id cap in
+  `domain/conflictCopy.ts`, since a Conflict copy can itself conflict and nest the pattern — builder
+  — 2026-08-26
+- **`Auto sync` gates the `begin-push` trigger only.** `pendingRev` mints at edit-time in both
+  settings, so 02's snapshot guard predicate never widens — mathematician / Badrish — 2026-08-26
+- `initializeFirestore` lives in `sync/firestoreGateway.ts`, not `platform/firebase.ts`, so the
+  import boundary needs **no exceptions** — builder — 2026-08-26
 
 ## Open questions
-- Complete `applySnapshot(localRow, serverDoc)` decision table, including absent `serverDoc`, and
-  whether 02's model included `snapshot-delivered` as an event at all — waiting on mathematician
-- Does Firestore's transaction-retry re-execution admit an interleaving the model ruled out —
-  waiting on mathematician (asked by designer)
-- Where `deviceId` is minted and stored — waiting on designer
-- Push trigger + backoff policy blessed or corrected — waiting on designer
-- 01's security rules predate `rev`/`conflictOf`/`conflictBase` and will reject Conflict copies —
-  mine to fix at emulator step
-- The 30-day purge is a hard delete and is unspecified; recommend no purge in v1 — needs a ticket
+- None blocking the engine's own work. Two dependencies elsewhere:
+  - The literal `NoteDoc` / `LocalNote` types — waiting on designer, blocks build step 2.
+  - Ticket 13's purge must respect appendix cell 7 (dirty row + absent server doc = no-op). Noted on
+    13; not this feature's to solve.
+
+## Answered since last session
+- Complete `applySnapshot(localRow, serverDoc)` table **including absent `serverDoc`** — delivered as
+  02's appendix (14 cells). 02's original model had indeed omitted `snapshot-delivered` as an event;
+  adding it found three real defects, all folded into `architecture.md`.
+- Transaction-retry re-execution: does not admit an interleaving the model ruled out.
+- 01's stale security rules: **fixed in the ticket**, amended to the full nine-field set with the
+  Conflict-copy acceptance test named for step 5.

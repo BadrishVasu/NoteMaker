@@ -110,6 +110,49 @@ written as failing tests first per the map's TDD rule. Non-negotiable cases: a s
 cannot read or write another user's path; an unauthenticated request is denied; a write with an
 empty title is denied; a write with a wrongly-typed field is denied.
 
+#### Amendment, 2026-08-26 (`builder`) — the rules above predate ticket 02 and would reject every Conflict copy
+
+The field list was written before 02 named `rev` and before the Conflict copy existed. If the shape
+validation is strict — and the whole reason it is here is that it should be — then the conflict
+branch's write is **denied by our own rules**. The failure mode is the bad one: a permanently stuck
+Outbox sitting behind a strip that reassures the user their notes are safe on this device, with no
+error anywhere the user can see. This must be fixed before the rules are first deployed, not
+discovered at build step 5.
+
+The complete permitted field set for a Note document is:
+
+| Field | Rule |
+|---|---|
+| `title` | string, non-empty |
+| `titleIsCustom` | bool |
+| `body` | string |
+| `createdAt` | number, immutable after creation |
+| `updatedAt` | number, not absurdly future-dated |
+| `deletedAt` | number or null |
+| `rev` | **string, required, non-empty** (ticket 02's opaque token — never a number, never compared for order) |
+| `conflictOf` | **string or absent** — the id of the Note this document is a Conflict copy of |
+| `conflictBase` | **map or absent** — the fork-point content 02 stores alongside the copy |
+
+Two things the rules must **not** do, both of which look like good ideas and are not:
+
+- **Do not require `conflictOf` and `conflictBase` to appear together**, and do not validate
+  `conflictBase`'s interior shape. It is fork-point *content*, its shape is the domain layer's, and
+  a rule that knows its fields is a rule that must be redeployed whenever the domain changes. Rules
+  enforce ownership and the things a compromised client could use to corrupt another device's view;
+  they are not a schema validator for our own data structures.
+- **Do not attempt to validate `rev`'s provenance.** It is client-minted by design — 02's retry
+  recognition (`srv.rev === pendingRev`) requires the writer to know the token before the round
+  trip. A rule that tried to constrain it would break the mechanism it was meant to protect.
+
+If the rules use a closed field allowlist (they should — an open one lets a compromised client
+write arbitrary bloat into the corpus), that allowlist is exactly the nine fields above.
+
+**Emulator tests owed at build step 5, named so they are not forgotten:** a Conflict copy carrying
+`rev` + `conflictOf` + `conflictBase` is **accepted**; an ordinary Note with `rev` and neither
+conflict field is **accepted**; a document with `rev` absent is **denied**; a document carrying an
+unknown field is **denied**. The first of those is the regression test for this amendment, and it is
+the one that would have failed in production.
+
 ### Indexes
 
 Deferred, with the reason stated. The queries that would need composite indexes are the live-list

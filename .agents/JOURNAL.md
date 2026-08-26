@@ -2,6 +2,72 @@
 
 Newest entry first. Append only.
 
+## 2026-08-26 — Badrish's three answers land; step 0 built; first application code in the repo
+**Worked:** builder, designer (earlier in the session)
+
+**Moved:**
+- **The project stopped specifying and started building.** Badrish answered all three open
+  questions, and step 0 of the architecture's build order is **built and verified locally**: Vite +
+  React + TS + Vitest, the ESLint import boundary, `vite-plugin-pwa` on `registerType: 'prompt'`,
+  PWA manifest with real icons, and a sign-in smoke screen that renders a uid and nothing else.
+  Tests, lint, typecheck and a production build all pass, and the page mounts in a real browser with
+  auth state resolving. **It is not deployed** — that is blocked on two Cloudflare dashboard actions
+  only Badrish can perform, listed on ticket 10 and in `features/deploy-pipeline.md`.
+- **Badrish's answers, and where each landed:**
+  1. **Service-worker mode `prompt`** → ticket 10 (which now owns the choice), `map.md`'s 07 entry,
+     `vite.config.ts`, `architecture.md`. This was the last input ticket 10 was waiting on.
+  2. **`Sync Now` + `Auto sync`** → ticket 05's manual-save section is now settled, not open. The
+     button forces an immediate drain; the setting is on by default and gates **only** the
+     `begin-push` trigger. `pendingRev` still mints at edit-time in both settings, so 02's snapshot
+     guard stays exactly `pendingRev !== null` and does not widen. **The naming is binding on every
+     surface** — nothing user-facing says "push" or "manual save".
+  3. **30-day Trash purge** → **ticket 13 created**, deferred out of the v1 slice. It records the
+     thing that would otherwise be discovered late: the purge is a *hard delete*, the only Note write
+     that is not an edit, and it must not break the appendix's cell 7 (dirty row + absent server doc
+     = no-op). Also flags that the product currently *promises* the purge in two strings; 13 either
+     implements that sentence or deletes it.
+- **All three defects from the Builder's readiness pass are fixed in the artifacts:** ticket 01's
+  security rules amended to the full nine-field set (they would have **rejected every Conflict
+  copy**, producing a permanently stuck Outbox behind a strip saying everything was fine); ticket
+  05's sync threshold corrected from ~1 MiB to **~450 KiB** because a Conflict copy carries two
+  bodies in one document; and the push-trigger policy taken as the Builder's and written down
+  (wake on edit / visible / snapshot delivery / backoff / `Sync Now`; 1s→60s backoff; 10s per-push
+  timeout).
+- **Two of the Builder's seven gaps closed without him** — the Mathematician's appendix had already
+  answered per-Note push independence (the serialised-drain holding position is withdrawn) and
+  `applySnapshot` with an absent `serverDoc`. `deviceId` is settled: `meta` store, per-uid,
+  `crypto.randomUUID()` truncated to 8 chars, with a length check on the composed copy id.
+- **The import boundary test caught a real bug in the boundary itself.** Four layered ESLint config
+  objects each declaring `no-restricted-imports` do **not** merge — a later match replaces the rule
+  wholesale, which had silently disabled the firestore boundary across most of `src/` and the
+  `domain/` purity rules entirely, while `npm run lint` reported a clean tree. Found only because
+  the guard was tested in both directions with negative controls. Fixed; each scope now declares its
+  complete rule set. This is ticket 09's structural guard, landed at step 0 instead of step 5.
+- **Overseer findings 3, 4, 5 and 7 have self-closed** since it wrote them (05 finished its edit,
+  the feature files landed, the logbook got committed). Finding 1, sequence drift, is answered by
+  this entry. Finding 6, ticket 11's scope, is still Badrish's and is flagged to him again.
+
+**Open:**
+- **Blocked on Badrish, and it is the only thing blocking step 0:** connect the GitHub repo to the
+  `note-maker-f41` Cloudflare Pages project, and set the four `VITE_FIREBASE_*` vars plus
+  `NODE_VERSION=20` on Production and Preview. Detail on ticket 10.
+- **Owed by the Designer, blocking build step 2:** the literal `NoteDoc` / `LocalNote` types, field
+  by field. Step 1 (`domain/title.ts`) does not need them and is unblocked now.
+- Ticket 11's per-hunk merge UI is the largest surface in the app for an event a two-device setup
+  hits rarely; its own ticket offers a pick-a-side variant at a tenth of the cost. Builder ranks it
+  below "running" and would take the cheap variant for v1 — Badrish's call, not his.
+- **Corners cut, stated:** the PWA icons are valid but placeholder art (real ones are UI/UX's at
+  step 6), and `firestore.rules` does not exist yet so `npm run rules:deploy` would fail today —
+  rules land at step 5 with their emulator tests written first.
+- Frontier after step 0: **step 1** (`domain/title.ts`), then 02's pure units. Tickets 06, 11, 12,
+  13 all sit after the app runs.
+
+**Badrish:** *"Service-worker mode — to be prompt."* · *"We can have 'Push now' and auto push. Just
+rename to 'Sync Now' and auto sync."* · *"30 day trash purge can be ticketed properly as
+suggested."* And to UI/UX, as a standing instruction now in force: build-team agents take simple
+questions to their lead (Builder or Designer) rather than to him, and the lead pushes the answer
+into the artifacts rather than leaving it in a transcript.
+
 ## 2026-08-25 — session close: 02/03/05 closed, architecture drafted, org stood up
 **Worked:** claude, mathematician, designer, ui-ux, builder, overseer
 **Moved:**
