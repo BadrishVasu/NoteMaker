@@ -86,10 +86,8 @@ push; that's Badrish's call same as last session.
 
 ### Nothing found wrong with the Builder's brief
 
-Every number in his handoff checked out on independent re-derivation: commit count, file list,
-merge-base ancestry, hook pass rate. No corrections owed back to him on the facts. The only addition
-I made was pre-flighting the *real* staged diff through the hook (not just trusting the test suite
-implies the real content is clean) and confirming no untracked files sit outside the known set —
-both are things that could have silently been true (a hook passing tests but failing on the actual
-content is exactly the "bypassed scanner" failure mode the hook's own comments warn about, so I
-didn't skip checking it directly).
+This brief carried one claim worth checking rather than trusting outright: "the push went through,
+`5da2840..c70a301`, fast-forward." Checked it against `git log --oneline -5 origin/main` before
+building anything on top of it — it matched local exactly, so the push really had landed and I
+wasn't about to add `.gitattributes` against a stale assumption of where `origin/main` sat. No
+corrections owed back to him on it.
