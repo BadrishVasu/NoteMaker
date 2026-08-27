@@ -2,6 +2,56 @@
 
 Newest entry first. Append only.
 
+## 2026-08-27 — the push landed; `.gitattributes` closes a silent-guard-failure hole
+**Worked:** builder, operations
+
+**Moved:**
+- **The push went through** — `5da2840..c70a301`, fast-forward. `origin/main` now carries the full
+  application tree and is clean of both apiKey- and appId-shaped strings at the tip.
+- **`.gitattributes` added by Operations** (`a4e8862`, plus `04297d2` for the logbook, deliberately
+  split). `* text=auto eol=lf` repo-wide, `*.png binary`. The target was `.githooks/pre-commit`: a
+  CRLF shell script silently stops running, and **a secret guard that stops running looks identical
+  to a guard with nothing to report** — the exact failure that made two agent definition files in
+  `~/.claude/agents/` unspawnable yesterday without anyone noticing.
+- **Operations found the failure mode already live rather than hypothetical.** `core.autocrlf=true`
+  had already drifted two tracked files to CRLF working copies despite LF in the index
+  (`.agents/features/editor-and-shell.md`, `.scratch/notes-mvp/issues/04-provision-accounts.md`).
+  `.githooks/pre-commit` hadn't drifted yet; nothing was stopping it. It then deleted and
+  re-checked-out the drifted pair to prove `eol=lf` actually overrides `core.autocrlf` on this
+  machine, rather than citing git's docs saying it should.
+- **Verified in both directions, which is now four for four on this project.** Positive:
+  `.githooks/*` and representative source/doc files resolve `text=auto eol=lf`. Negative: the PNGs.
+  Operations noticed `check-attr` still echoes `eol: lf` for binaries cosmetically (the `binary`
+  macro doesn't clear that attribute) — so the attribute table alone would have been a false
+  negative control — and proved inertness on the actual bytes instead: `git add --renormalize .`
+  on the clean tree staged nothing but `.gitattributes` itself, `git hash-object` on `icon-192.png`
+  identical before and after. **No blob changed, so no renormalisation commit was owed** — checked,
+  not assumed.
+- I re-derived it independently: `git ls-files --eol` gives `attr/-text` on the PNG, a stronger
+  negative control than the `check-attr` table; hook suite re-run post-change is 11/11.
+- **Took the repo-wide rule over scoping to `.githooks/*`/`*.sh`, and it's the right call** — a
+  pattern scoped to the paths that need it *today* is the same shape as the ESLint boundary that
+  matched nothing and the pre-commit app-id gap: provably correct against what it was tested on,
+  silently wrong for the next file nobody added to the list.
+- **Corrected Operations' notebook, not its work.** Its new session entry closed with a paragraph
+  describing checks belonging to the *previous* session (merge-base ancestry, hook pass rate,
+  staged-diff pre-flight) — none of it in this brief. An entry describing verification that didn't
+  happen this session is the same failure as a guard that silently matches nothing: it reads as
+  evidence to the next agent. Sent it back to fix in its own words.
+
+**Open:**
+- **Badrish: two commits sit local and unpushed** (`a4e8862`, `04297d2`); `origin/main` is at
+  `c70a301`. Operations held the no-push line, correctly. His word releases them.
+- Then unchanged: connect the Pages project, set the four `VITE_FIREBASE_*` vars plus
+  `NODE_VERSION=20` on Production and Preview. The first build must not run before the vars are set.
+- Key rotation at the Firebase console remains Badrish's and remains open.
+- Unchanged: the Designer owes the literal `NoteDoc`/`LocalNote` types (blocks step 2); ticket 11's
+  per-hunk merge UI scope is Badrish's call; step 1 (`domain/title.ts`) needs nothing from anyone.
+- Still outstanding from last session: whether key rotation constrains push ordering in either
+  direction. It does not gate anything currently in front of Badrish.
+
+**Badrish:** "Builder please tell Operations to add the .gitattributes for LF"
+
 ## 2026-08-27 — Operations takes the push; a one-word proposal is in front of Badrish
 **Worked:** builder, operations
 
