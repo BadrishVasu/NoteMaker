@@ -43,6 +43,17 @@ app installs to an Android homescreen.
       the index; re-checking them out after adding the attributes file produced clean LF, confirming
       `eol=lf` overrides this machine's `core.autocrlf` rather than asserting it should. Not pushed —
       Badrish's word, same as the last push.
+- [x] **Local run path documented and its silent failure closed** — builder, 2026-08-27, prompted by
+      Badrish asking whether values get hand-edited into `src/platform/firebase.ts` and reverted
+      after. They do not: that file reads `import.meta.env` only, so `.env.local` is the entire
+      mechanism and no source file is ever touched. Neither ticket 10 nor `.env.example` said this
+      anywhere — both described the deployed path only — and both now carry it. Also pinned the dev
+      and preview ports (`strictPort`, `vite.config.ts`), because ticket 04's referrer restriction
+      lists 5173/4173 explicitly and does not wildcard ports: Vite's default increment past a busy
+      5173 produced a 5174 that fails at sign-in with a 403, an auth-shaped error with a port-shaped
+      cause. Test written first (`src/test/devServerPorts.test.ts`, 3 cases, red before green), and
+      verified in the other direction too — a second `vite` against a running one exits
+      `Error: Port 5173 is already in use` instead of taking 5174.
 - [ ] **Badrish, step 1: connect the GitHub repo to the Pages project.**
 - [ ] **Badrish, step 2: set the four `VITE_FIREBASE_*` vars plus `NODE_VERSION=20` on Production
       and Preview.** The first build must not run before this — a bundle built without them fails at

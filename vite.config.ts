@@ -7,6 +7,13 @@ import { VitePWA } from 'vite-plugin-pwa'
 // Firestore uses IndexedDB, not Cache Storage, so there is nothing for Workbox to cache.
 // Ticket 10 / Badrish 2026-08-26: update mode is `prompt`, locked by the first deploy.
 export default defineConfig({
+  // Ticket 04 lists `http://localhost:5173/*` and `http://localhost:4173/*` on the API key's
+  // referrer restriction explicitly, because port wildcards are not reliably honoured. Vite's
+  // default is to increment past a busy port, and an unlisted port fails at sign-in with a 403
+  // that reads as an auth bug. `strictPort` makes it refuse to start instead — a failure that
+  // names itself. Guarded by src/test/devServerPorts.test.ts. (builder, 2026-08-27)
+  server: { port: 5173, strictPort: true },
+  preview: { port: 4173, strictPort: true },
   plugins: [
     react(),
     VitePWA({

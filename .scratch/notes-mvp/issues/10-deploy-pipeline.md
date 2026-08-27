@@ -88,6 +88,46 @@ Nothing in the repo holds a literal value; see ticket 04, which was corrected on
 The actual enforcement boundary is Firestore security rules plus the Auth authorised-domain list
 plus the API-key HTTP-referrer restriction — never secrecy of the key.
 
+### Running it on a local machine
+
+Added 2026-08-27 after Badrish asked whether the way to run it locally is to edit the values into
+`src/platform/firebase.ts` and revert them afterwards. It is not, and the ticket did not say so
+anywhere — it described the deployed path only.
+
+`src/platform/firebase.ts` reads **`import.meta.env` and nothing else**. There is no literal in it
+to edit, and editing one in would put a credential-shaped string into a tracked source file — the
+exact class of exposure this repo already carries in its history. The whole local mechanism is
+`.env.local`, which `.gitignore` covers.
+
+```
+cp .env.example .env.local     # fill in the four values; a placeholder .env.local may exist already
+npm install
+npm run dev                    # http://localhost:5173
+```
+
+Vite reads `.env.local` at server start, so a changed value needs a restart; HMR does not pick it up.
+
+**The dev and preview ports are now pinned** (`server`/`preview` `strictPort: true` in
+`vite.config.ts`, guarded by `src/test/devServerPorts.test.ts`). Ticket 04's referrer restriction
+lists `http://localhost:5173/*` and `http://localhost:4173/*` explicitly and port wildcards are not
+honoured, so Vite's default increment-past-a-busy-port turns a taken 5173 into a 5174 that fails at
+sign-in with `403 Requests from referer ... are blocked` — an auth-shaped error with a port-shaped
+cause. It now refuses to start instead. Verified in both directions: config pinned, and a second
+`vite` against a running one exits with `Error: Port 5173 is already in use` rather than taking 5174.
+
+**Two failures on localhost look like bugs and are configuration**, which is the same trap this
+ticket already documents for previews:
+
+| What you see | Cause |
+|---|---|
+| Boots fine, sign-in popup errors `auth/api-key-not-valid` | `.env.local` still holds placeholder values |
+| Red screen at boot: `Firebase config missing: ...` | No `.env.local`, or a name misspelled |
+| Popup errors `auth/unauthorized-domain` | `localhost` missing from Firebase Auth → Settings → Authorised domains (it is there by default; only an issue if the list was pruned) |
+| Popup errors `Requests from referer http://localhost:5174 are blocked` | Should now be impossible — if it appears, the port pin was overridden |
+
+`localhost` needs **no** Cloudflare or Pages involvement, and no deploy. Sign-in on localhost is
+independent of the `note-maker-f41.pages.dev` authorised domain that ticket 04 step 6 added.
+
 ### Preview deployments: enabled, and they cannot sign in
 
 Enabled. They cost nothing and they catch a broken build per branch.

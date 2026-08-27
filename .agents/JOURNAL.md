@@ -2,6 +2,50 @@
 
 Newest entry first. Append only.
 
+## 2026-08-27 — the local run path, which nothing had ever written down
+**Worked:** builder
+
+**Moved:**
+- **Badrish asked how to run it locally**, describing the method as: paste values into the `const` in
+  `firebase.ts`, `npm run dev`, revert afterwards. Answered from the code: `src/platform/firebase.ts`
+  reads `import.meta.env` and holds no literal to edit, so `.env.local` is the whole mechanism and no
+  source file is ever touched. The method he described is the one that produced the exposure sitting
+  in this repo's history — but the more useful finding is **why he'd reach for it: nothing told him
+  otherwise.** Ticket 10 and `.env.example` both documented the *deployed* path only. Local running
+  was known by everyone who'd built it and written down by nobody.
+- **Pinned the dev/preview ports** — `server`/`preview` `strictPort: true` in `vite.config.ts`.
+  Ticket 04's referrer restriction lists `localhost:5173` and `localhost:4173` explicitly and port
+  wildcards are not honoured, so Vite's default increment past a busy 5173 silently produces a 5174
+  that fails at sign-in with `403 Requests from referer ... are blocked` — an auth-shaped error with
+  a port-shaped cause, which is exactly the class Badrish has said reads to him as a bug.
+- **Test first, and verified in both directions** — `src/test/devServerPorts.test.ts`, 3 cases, red
+  (3/3) before the config change, green after. Then the negative control on the real behaviour, not
+  the config object: a second `vite` against a running one now exits `Error: Port 5173 is already in
+  use` rather than taking 5174. Two false starts getting there — a squatter on a wildcard address
+  and one on `127.0.0.1` both failed to collide, because Vite binds `::1` on this machine. Worth
+  remembering: **on Windows, occupying `127.0.0.1:<port>` does not prove a port is occupied.**
+  Suite 12/12, lint and typecheck clean.
+- **Found `.env.local` already on this machine holding placeholder values**, per its own header. It
+  boots — `readConfig()` only throws on *missing* names, not invalid ones — and fails at the sign-in
+  popup with `auth/api-key-not-valid`. That is the single most likely thing he hits, so it leads the
+  failure table now on ticket 10.
+- Empirically checked rather than assumed: dev server serves on 5173, `virtual:pwa-register` resolves
+  in dev (a broken import there would be a blank white page, not an error).
+
+**Open:**
+- Unchanged and all still Badrish's: connect the Pages project; set the four `VITE_FIREBASE_*` vars
+  plus `NODE_VERSION=20` on Production and Preview before the first build; key rotation at the
+  Firebase console.
+- **Not verifiable from here:** whether `localhost` is still on Firebase Auth's authorised-domains
+  list. It is there by default and ticket 04 only ever recorded an *addition*, so almost certainly
+  fine — but it is a one-look check in the console, and the failure (`auth/unauthorized-domain`)
+  is on ticket 10's table so it isn't mistaken for a code bug.
+- Four files modified, nothing committed, nothing pushed.
+- Unchanged: the Designer owes the literal `NoteDoc`/`LocalNote` types (blocks step 2); ticket 11's
+  per-hunk merge UI scope is Badrish's call; step 1 (`domain/title.ts`) needs nothing from anyone.
+
+**Badrish:** "I would like to run this project on my local machine and see how it works."
+
 ## 2026-08-27 — the push landed; `.gitattributes` closes a silent-guard-failure hole
 **Worked:** builder, operations
 

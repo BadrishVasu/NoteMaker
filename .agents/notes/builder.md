@@ -1,5 +1,50 @@
 # Builder's notebook — NoteMaker
 
+## 2026-08-27 — the documentation gap I'd have called a user error
+
+Badrish asked how to run it locally and described hand-editing the values into `firebase.ts` and
+reverting after. The easy read is "that's the pattern that caused the exposure, tell him not to."
+The honest read is worse for me: **he reached for it because nothing in the repo told him anything
+else.** Ticket 10 documents the deployed path in detail. `.env.example` says "copy to `.env.local`",
+which presumes you already know that's the whole mechanism. Neither says `npm run dev` anywhere.
+
+This is a new shape of the omission I wrote up last session. That one was a handoff *list* missing a
+step. This one is a path that never got a list at all, because every person who could write it
+already knew it. **The steps most likely to go unwritten are the ones the writer does without
+thinking.** When I document a path, the test is not "is each step correct" but "could someone who
+has never run this follow it" — and if the answer requires knowing what `import.meta.env` implies,
+it isn't written yet.
+
+### The port pin, and a negative control that took three tries
+
+Ticket 04 lists `localhost:5173` and `localhost:4173` on the key's referrer restriction *explicitly*,
+noting port wildcards aren't honoured. Vite's default is to increment past a busy port. So a taken
+5173 becomes 5174, and 5174 gets `403 Requests from referer ... are blocked` at sign-in. Auth-shaped
+error, port-shaped cause, one dim line in the banner as the only evidence — and Badrish has told me
+directly that an auth failure at sign-in reads to him as a bug. Pinned with `strictPort` so it
+refuses to start instead. Test first, red 3/3, green.
+
+Then the part worth writing down. My first two negative controls **both silently failed to test
+anything**: I occupied `5173` on a wildcard address, then on `127.0.0.1`, and Vite started happily
+on 5173 both times — it binds `::1` on this machine. Had I stopped at either, I'd have recorded
+"verified" for a check that never ran, which is the precise failure I've now caught four times on
+this project in other people's work and just produced twice in my own in five minutes. What saved it
+was that the control had a *predicted* outcome ("vite must exit with an error") and I checked
+against that, not against "did something happen." **A negative control needs an expected observation,
+or it's a ritual.** The one that worked: run a second `vite` against a running one.
+
+Corollary for Windows specifically: **binding `127.0.0.1:<port>` does not occupy that port.** I'll
+hit this again.
+
+### Small thing that'll bite someone
+
+`.env.local` already exists on his machine with placeholder values. `readConfig()` throws only on
+*missing* names, never on invalid ones — so placeholders sail past the loud boot-time guard I wrote
+to catch exactly this, and surface as `auth/api-key-not-valid` at the popup instead. The guard is
+still right (a missing var is the Cloudflare failure mode it was written for), but its existence
+made me assume misconfiguration was covered, and it covers half. Failure table on ticket 10 now
+leads with the placeholder case.
+
 ## 2026-08-27 — the push was a gap, and the redaction had a second miss
 
 Badrish asked whether the unpushed `origin/main` was intentional. It wasn't. Worth being precise
