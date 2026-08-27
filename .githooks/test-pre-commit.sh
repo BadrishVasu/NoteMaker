@@ -20,6 +20,7 @@ FAKE_GOOGLE_KEY="AIza""SyB1cD3fG4hI5jK6lM7nO8pQ9rS0tU1vW2xY"
 FAKE_GH_TOKEN="ghp_""0123456789abcdefghijklmnopqrstuvwxyzAB"
 FAKE_AWS_KEY="AKIA""IOSFODNN7EXAMPLE"
 FAKE_PEM="-----BEGIN ""RSA PRIVATE KEY-----"
+FAKE_FIREBASE_APP_ID="1:""000000000000:web:0123456789abcdef012345"
 
 fresh_repo () {
   rm -rf "$WORK/repo"; mkdir -p "$WORK/repo"; cd "$WORK/repo" || exit 1
@@ -69,6 +70,17 @@ expect blocked "blocks a PEM private key block"
 fresh_repo
 printf 'export const port = 5173\n' > app.ts && git add app.ts
 expect allowed "allows ordinary source (negative control)"
+
+# The apiKey is not the only VITE_FIREBASE_* value: ticket 10 says none of the
+# four belong in the repo, and the appId is the one that looks least like a
+# secret while being exactly as credential-shaped.
+fresh_repo
+printf 'appId %s\n' "$FAKE_FIREBASE_APP_ID" > doc.md && git add doc.md
+expect blocked "blocks a Firebase app id"
+
+fresh_repo
+printf 'a 1:2 ratio, and see web:1234 in the appId docs\n' > doc.md && git add doc.md
+expect allowed "allows colon-separated prose that is not an app id (negative control)"
 
 # The hook must read STAGED content, not the working tree: a secret removed from
 # the file but still staged has to be caught, or `git add` then edit slips past.

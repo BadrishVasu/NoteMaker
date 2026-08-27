@@ -2,6 +2,84 @@
 
 Newest entry first. Append only.
 
+## 2026-08-27 — Operations takes the push; a one-word proposal is in front of Badrish
+**Worked:** builder, operations
+
+**Moved:**
+- **Badrish asked for the Operations agent to own the push, and it does now.** Summoned with one
+  hard constraint: prepare and propose, never execute. `git push` runs on Badrish's word and on
+  nobody else's. Operations held that line and says so itself in its proposal.
+- **Operations re-derived the whole push state independently rather than trusting the Builder's
+  summary**, which is the reason to hand this to a second agent at all. Everything checked out —
+  9 commits fast-forward (`5da2840` → `cd682b2`, confirmed by `git push --dry-run`), `3a8bdaa`
+  confirmed already an ancestor of the public `origin/main`, the 7 uncommitted files run through
+  `.githooks/pre-commit` **against their real staged content** rather than only via the test suite
+  (exit 0), the 11-case suite clean, a full-tree grep for both credential shapes at zero hits, and
+  no stray untracked files outside the known set. It then restored the tree to exactly its
+  pre-verification state — nothing staged, nothing committed. Verified that myself.
+- **The proposal is commit-then-push, not push alone, and that distinction is the whole point.**
+  A bare `git push` would publish the 9 commits and leave the `appId` redaction sitting
+  uncommitted — so the corrected tree would *not* be what lands on the public repo. The single
+  most important property of this push is the one a naive push would miss.
+- **Operations bundled the commit inside the green light rather than gating it separately**, and
+  asked me to confirm or split it. Confirmed. The commit is local and reversible; the push is the
+  one-way public action, and Badrish asked for something approvable in one word. Making him
+  approve a no-risk step twice is worse.
+- Ticket 10 gains a `Push proposal` section that is an **audit trail, not a second copy** of the
+  proposal — the proposal itself lives in Operations' own words to Badrish. Two copies of the same
+  thing drift, and the copy nobody trusts is worse than none.
+
+**Open:**
+- **Badrish: the green light.** One word runs commit-then-push. Then unchanged: connect the Pages
+  project, set the four `VITE_FIREBASE_*` vars plus `NODE_VERSION=20` on Production and Preview.
+  The first build must not run before the vars are set.
+- **Asked Operations one question it hadn't answered: does the key rotation constrain push
+  ordering in either direction?** It stayed out of the rotation's ownership, correctly, but that
+  wasn't the question — sequence was. Answer outstanding; it does not change what Badrish is
+  approving, since rotation is not part of the proposal.
+- Rotation itself is with Badrish and Claude, and Operations was told not to duplicate it.
+- Unchanged: the Designer owes the literal `NoteDoc`/`LocalNote` types (blocks step 2); ticket 11's
+  per-hunk merge UI scope is Badrish's call; step 1 (`domain/title.ts`) needs nothing from anyone.
+
+**Badrish:** "Builder please trigger the operations agent for pushing commits to GitHub repo so
+that I may give it the green light."
+
+## 2026-08-27 — the unpushed tree, and a second miss in the same redaction
+**Worked:** builder
+
+**Moved:**
+- **Answered Badrish on why `origin/main` is nine commits behind: it is a gap, not a decision.** The
+  push was never on ticket 10's list of things only he can do, so nobody was holding it. Ticket 10's
+  Badrish-actions list is corrected and now runs **push → connect Pages → set env vars**, with the
+  reason spelled out: Pages builds from GitHub, and `origin/main` (`5da2840`) contains no
+  application code, so connecting first would have deployed an empty tree and produced a fake deploy
+  failure.
+- **Assessed the tree as safe to publish, and the assessment found something.** Ticket 04 still
+  recorded the literal Firebase `appId`. The earlier redaction kept it on the reasoning that it is
+  "a name rather than a key" — the same conflation Badrish already corrected once, in a smaller
+  costume, and a direct contradiction of ticket 10's own rule that none of the four
+  `VITE_FIREBASE_*` values belong in the repo. Redacted to a pointer. **The rule is now
+  shape-based, not judgement-based.**
+- **The pre-commit guard had the matching hole and it is closed, test-first.** Added a Firebase
+  app-id pattern; wrote the failing test before the pattern, with a negative control (colon-separated
+  prose that must still commit). `.githooks/test-pre-commit.sh` is 11 cases, all passing.
+- **Found and recorded a real exposure that nothing was tracking:** the apiKey commit `3a8bdaa` was
+  pushed to the **public** `origin/main` on 2026-08-25, and the redaction (`662360f`) never was — so
+  the literal key is in the file at the public tip right now. Pushing *cleans* the tip. Only
+  rotation at the Firebase console ends it, and that is Badrish's. Written onto ticket 04 and into
+  `features/deploy-pipeline.md`'s open questions.
+
+**Open:**
+- **Badrish, in order:** push `main`; connect the GitHub repo to the `note-maker-f41` Pages project;
+  set the four `VITE_FIREBASE_*` vars plus `NODE_VERSION=20` on Production and Preview. The first
+  build must not run before the vars are set — a bundle built without them fails at sign-in, not at
+  build time, and reads as an auth bug.
+- **Badrish, separately:** whether to rotate the exposed apiKey. Not urgent (Firestore rules and
+  Google sign-in are the real guard) but it is the only thing that ends the exposure.
+- Unchanged from 2026-08-26: the Designer owes the literal `NoteDoc`/`LocalNote` types (blocks step
+  2); ticket 11's per-hunk merge UI scope is still Badrish's call; step 1 (`domain/title.ts`) is
+  unblocked and needs nothing from anyone.
+
 ## 2026-08-26 — Badrish's three answers land; step 0 built; first application code in the repo
 **Worked:** builder, designer (earlier in the session)
 

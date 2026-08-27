@@ -1,5 +1,49 @@
 # Builder's notebook — NoteMaker
 
+## 2026-08-27 — the push was a gap, and the redaction had a second miss
+
+Badrish asked whether the unpushed `origin/main` was intentional. It wasn't. Worth being precise
+about *how* it wasn't, because the failure mode is reusable:
+
+**I wrote a list of "steps only Badrish can perform" and the list was incomplete.** Both entries on
+it were Cloudflare dashboard actions, so the list quietly became "the dashboard actions" in my head,
+and the push — the step that makes those actions mean anything — was in nobody's column. Not mine
+(I don't push without his word on a public repo), not his (he never saw it written down). A
+handoff list is the one artifact where an omission is invisible from both ends: he can only act on
+what's listed, and I stop looking once I've listed what I know. **When I write a blocked-on-Badrish
+list, walk the whole path from my last commit to the thing working, and put every step on it,
+including the ones I could technically do myself.**
+
+### The redaction miss — same mistake, smaller costume
+
+Ticket 04 still held the literal `appId`. The first redaction removed the `apiKey` and kept the rest
+with the sentence "they are names rather than keys." That's the *exact* reasoning shape Badrish
+corrected the first time ("public by design, therefore safe to commit"), just applied to a different
+field. And it contradicted ticket 10, which already said none of the four `VITE_FIREBASE_*` values
+belong in the repo — the two tickets disagreed and nobody noticed because each read fine alone.
+
+What I'm taking from it: **a judgement-based rule regenerates the mistake it was written to stop.**
+"Is this value really sensitive?" invites a fresh wrong answer per field. "Is this value carried as
+a `VITE_FIREBASE_*` variable?" has one answer and no room to be clever. Mechanical beats correct-
+sounding for rules that have to survive being applied by a tired agent at the end of a session.
+
+Corollary I nearly missed: **the guard had the same hole as the document.** I only found it because
+I scanned the whole tree rather than trusting that the hook's clean exit meant a clean tree. Wrote
+the failing test before the new pattern, with a negative control. That's now 11 cases. Third time on
+this project that testing an enforcement mechanism in both directions has paid out.
+
+### The thing nothing was tracking
+
+`3a8bdaa` — the commit that pasted the apiKey — **is already on the public `origin/main`**, pushed
+2026-08-25. The redaction commit is not. So the live public tip still shows the key, and the only
+clean copy is this working tree. Nobody had written that down anywhere; the redaction commit read
+like the incident was closed, and it wasn't.
+
+Pushing *improves* it (tip becomes clean). Rotation is the only real fix and it's Badrish's — I did
+not reach for `filter-repo`, per the standing rule that rewriting history doesn't retract a value a
+scanner has already read. It's on ticket 04 and in the feature file's open questions now, so it
+survives me.
+
 ## 2026-08-26 — answers landed, step 0 built, first code in the repo
 
 Badrish answered all three. The org stopped specifying and started building.

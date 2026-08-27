@@ -40,25 +40,59 @@ Auth authorised domains, not from keeping these values secret.
 **That is not the same as publishing them.** "Cannot be hidden from a user of the app" and "belongs
 in a public Git repository" are different claims, and an earlier revision of this ticket conflated
 them. This repo is public and `.scratch/` is committed on purpose, so a value pasted here is a value
-indexed by every credential scanner pointed at GitHub. The `apiKey` is therefore **not recorded in
-this repo**; the identifiers below are, because they are names rather than keys.
+indexed by every credential scanner pointed at GitHub.
+
+**The line is drawn by shape, not by whether the value is really a secret** — corrected a second
+time, 2026-08-27. The first correction removed the `apiKey` and kept the rest on the reasoning that
+they "are names rather than keys". That reasoning is the same conflation in a smaller costume: the
+`appId` is not a name, it is an opaque generated identifier that looks exactly like a credential, and
+ticket 10 already says **none of the four `VITE_FIREBASE_*` values belong in this repo**. Recording
+one of them here contradicted that ticket outright. Judging value-by-value whether something is
+"really" sensitive is precisely where the first mistake came from, so the rule is mechanical:
+anything carried into the build as a `VITE_FIREBASE_*` variable is a pointer here, never a value.
+
+What stays below are plain names — a hostname and a project slug, both of which already appear in
+`.firebaserc` and in the deploy target by necessity, and neither of which is credential-shaped.
 
 ```
-apiKey              <not recorded here — see "Where the apiKey lives" below>
+apiKey              <not recorded — VITE_FIREBASE_API_KEY, see "Where the values live" below>
 authDomain          notemaker-claude.firebaseapp.com
 projectId           notemaker-claude
-storageBucket       notemaker-claude.firebasestorage.app
-messagingSenderId   27217454343
-appId               1:27217454343:web:d53445fd7173e373cc91a2
-measurementId       G-4Z7S3RNJPP
+appId               <not recorded — VITE_FIREBASE_APP_ID, see "Where the values live" below>
 ```
 
-### Where the apiKey lives
+`storageBucket`, `messagingSenderId` and `measurementId` are gone from this list as well as from the
+build: ticket 10 omits the first two deliberately (no Cloud Storage, no FCM) and there is no
+Analytics in this product. An unused config field is a thing a future contributor wires something to.
+
+### The apiKey is already published, and rotation is Badrish's call
+
+Recorded 2026-08-27 so it is not rediscovered. The commit that first pasted the key, `3a8bdaa`, was
+**pushed to the public `origin/main` on 2026-08-25**. The redaction commit `662360f` was not, so as
+of today the file at the public tip *still contains the literal key*, and the working tree in this
+clone is the only place it is redacted.
+
+Two consequences:
+
+- **Pushing does not make this worse — it makes the tip clean.** The key is already indexed. The
+  first push removes it from the current file; it stays in `3a8bdaa` in history regardless.
+- **History rewriting is not the remedy and is not the Builder's to perform.** A force-push does not
+  retract a value a scanner has already read, and GitHub retains unreachable commits.
+  **Rotation at the Firebase console is the only real fix, and it is Badrish's.** Rotating means
+  minting a replacement web API key, re-applying the referrer restriction from step 4 below, and
+  updating `VITE_FIREBASE_API_KEY` in Cloudflare Pages and in `.env.local`. It is not urgent in the
+  sense of a leaked secret — Firestore rules and Google sign-in are what actually guard the notes,
+  and the referrer restriction caps quota abuse — but it is the one action that ends the exposure.
+
+### Where the values live
 
 Firebase console → Project settings → General → Your apps → Web app → SDK setup and configuration.
-Ticket 10 supplies it to the build as `VITE_FIREBASE_API_KEY`, set as a Cloudflare Pages environment
-variable and in a local `.env` (gitignored). Nothing in the repo holds the literal value, and
-`.githooks/pre-commit` refuses any commit that reintroduces one.
+Ticket 10 supplies all four to the build as `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`,
+`VITE_FIREBASE_PROJECT_ID` and `VITE_FIREBASE_APP_ID`, set as Cloudflare Pages environment variables
+and in a local `.env.local` (gitignored). Nothing in the repo holds a literal `apiKey` or `appId`,
+and `.githooks/pre-commit` refuses any commit that reintroduces either — it now carries a pattern
+for the app-id shape as well as the `AIzaSy` shape, with negative controls in
+`.githooks/test-pre-commit.sh`.
 
 ### Referrer restriction is a quota guard, not an auth boundary
 

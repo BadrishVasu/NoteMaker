@@ -139,10 +139,19 @@ offering a reload; `updateSW()` on accept. Consequences worth stating rather tha
 - The affordance's placement and copy are UI/UX's at build step 6. It shares the shell's bottom
   strip region with 05's `N notes waiting to sync`, and the two must not stack.
 
-### Steps only Badrish can perform
+### Steps only Badrish can perform, in this order
 
-Both are in the Cloudflare dashboard, and step 0 is blocked on them:
+Corrected 2026-08-27: **the push comes first, and it was missing from this list.** Cloudflare Pages
+builds from GitHub, and `origin/main` is nine commits behind — it sits at `5da2840`, which predates
+every ticket resolution and all of step 0. Connecting the Pages project today would build a tree
+with **no application code in it**: no `package.json`, no `index.html`, no `src/`. The build would
+either fail outright or deploy an empty directory, and the first thing anyone looked at would be a
+deploy failure caused by ordering rather than by anything real.
 
+0. **Push `main` to `origin`.** Nine commits, no rewriting, a plain fast-forward. This is a
+   *decision* rather than a formality because the repo is public — see the paragraph below, and the
+   exposure note on ticket 04. Badrish's call; the Builder's assessment is that the tree is safe to
+   publish.
 1. **Connect this GitHub repo to the `note-maker-f41` Pages project** (Workers & Pages → the project
    → Settings → Builds & deployments → connect to Git), with the build settings from the table above
    and production branch `main`.
@@ -150,4 +159,60 @@ Both are in the Cloudflare dashboard, and step 0 is blocked on them:
    Values come from the Firebase console: Project settings → General → Your apps → SDK setup and
    configuration. They are not recorded in this repo and must not be pasted into it.
 
+Steps 1 and 2 may be done in either order relative to each other, but **the first build must not run
+before step 2** — a build without the env vars produces a bundle whose Firebase config is
+`undefined`, which fails at sign-in rather than at build time and looks like an auth bug. If the
+connect in step 1 triggers a build immediately, set the variables and redeploy.
+
+### Is the tree safe to publish?
+
+Assessed by the `builder` agent, 2026-08-27, because "push to a public repo" deserves an answer
+rather than an assumption.
+
+**Yes — with one correction made first, now landed.** What was checked, and what it found:
+
+- Every tracked file was scanned for credential shapes (Google API keys, tokens, PEM blocks,
+  service-account JSON, Firebase app ids). **One hit:** ticket 04 still recorded the literal
+  `appId`, which the earlier redaction had kept on the reasoning that it is "a name rather than a
+  key". That reasoning was wrong and contradicted this ticket's own rule that none of the four
+  `VITE_FIREBASE_*` values belong in the repo. Redacted to a pointer.
+- **The pre-commit guard had the matching gap** and has been closed: it now carries a Firebase
+  app-id pattern, tested in both directions in `.githooks/test-pre-commit.sh` (11 cases, positive
+  and negative controls, all passing). A scanner that never matches is indistinguishable from a
+  clean repo, so the negative controls are the part that makes this claim mean anything.
+- `.gitignore` covers `.env` and `.env.*` with a single `!.env.example` exception, and
+  `.env.example` holds the four names, no values. `.env.example` is the only env file tracked.
+- Nothing else in the tree is sensitive: source, config, tickets and the logbook.
+
+**The one thing publishing does not fix** is that the apiKey is *already* public — it went to
+`origin/main` in `3a8bdaa` on 2026-08-25 and is still in the file at the public tip. Pushing
+improves that (the tip becomes clean); only rotation ends it. See ticket 04.
+
 Everything else in this ticket is the Builder's and runs from the repo.
+
+### Push proposal — Operations, 2026-08-27
+
+Assigned by the Builder to own step 0's push mechanics: prepare the exact commands, pre-flight
+everything that can be checked without publishing, and put a one-word-approvable proposal in front
+of Badrish. **Operations does not run `git push`; Badrish's word is the only trigger.**
+
+Independently re-verified rather than trusted from the Builder's summary:
+
+- `main` is 9 commits ahead of `origin/main` (`5da2840`); `git push --dry-run origin main` reports
+  a clean fast-forward to `cd682b2` — no rejection, no divergence.
+- `3a8bdaa` (the literal apiKey commit) confirmed an ancestor of `origin/main` via
+  `git merge-base --is-ancestor` — the exposure is real and pre-existing, not created by this push.
+- The 7 uncommitted files staged and run through `.githooks/pre-commit` directly against their real
+  staged content (not just the test suite): hook exits 0, nothing credential-shaped. The 11-case
+  test suite also re-run clean.
+- Full-tree grep for the apiKey and app-id regexes across every tracked file: zero hits.
+- No untracked files sitting outside the known 7 — the uncommitted set is exactly what the Builder
+  described, nothing missed.
+
+Two of the 7 files are Operations' own edits to this ticket and to `features/deploy-pipeline.md`,
+made in the course of this assessment — they ride in the same commit as the other 5, no new file
+added to the set except this notebook entry's sibling, `.agents/notes/operations.md`.
+
+The full proposal (commands, wording, what ships) is in the `**To Badrish —**` block Operations
+addressed to him directly. It is not duplicated here; this section is the audit trail for the
+verification behind it.

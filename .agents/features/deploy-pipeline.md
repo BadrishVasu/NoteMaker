@@ -22,10 +22,23 @@ app installs to an Android homescreen.
       emulator tests. Deliberately not automated — automating it needs a service-account secret to
       save three deploys over the project's life.
 - [x] Service-worker update mode: **`prompt`** — Badrish, 2026-08-26. Locked by the first deploy.
-- [ ] **Badrish: connect the GitHub repo to the Pages project, and set the four `VITE_FIREBASE_*`
-      vars plus `NODE_VERSION=20` on Production and Preview.** Step 0 is blocked on this and on
-      nothing else.
-- [ ] Vite + React + TS + Vitest scaffold, ESLint import-boundary rule, PWA manifest and icons
+- [x] Vite + React + TS + Vitest scaffold, ESLint import-boundary rule, PWA manifest and icons —
+      built and verified locally (tests, lint, typecheck, production build, browser mount). Commit
+      `cd682b2`.
+- [x] Tree assessed as safe to publish — builder, 2026-08-27. Full-tree credential scan; the one
+      hit (a literal `appId` still recorded on ticket 04) is redacted, and the pre-commit guard now
+      carries an app-id pattern with negative controls. See ticket 10.
+- [ ] **Badrish, step 0: push `main` to `origin`.** Nine commits, fast-forward. Cloudflare Pages
+      builds from GitHub and `origin/main` (`5da2840`) predates all application code, so connecting
+      the Pages project before this builds an empty tree.
+- [x] Push proposal prepared and pre-flighted — operations, 2026-08-27. Exact commit + push commands
+      in front of Badrish for one-word approval. Independently re-verified: fast-forward dry-run
+      clean, hook fires 0 on the real staged content, zero credential-shaped matches tree-wide.
+      Operations does not execute the push; see ticket 10.
+- [ ] **Badrish, step 1: connect the GitHub repo to the Pages project.**
+- [ ] **Badrish, step 2: set the four `VITE_FIREBASE_*` vars plus `NODE_VERSION=20` on Production
+      and Preview.** The first build must not run before this — a bundle built without them fails at
+      sign-in, not at build time, and reads as an auth bug.
 - [ ] Blank page live on the host
 - [ ] Sign-in smoke test passing on the deployed host (not localhost)
 - [ ] Installed to an Android homescreen
@@ -39,6 +52,13 @@ app installs to an Android homescreen.
 - `storageBucket` and `messagingSenderId` omitted from the config: no Storage, no FCM, and an unused
   config field is something a future contributor wires to — builder — 2026-08-26
 - No credential values in the repo; `.env.example` carries names only — standing rule, ticket 04
+- The rule is **shape-based, not judgement-based**: anything carried as a `VITE_FIREBASE_*` variable
+  is a pointer in the repo, never a value. Deciding value-by-value whether something is "really"
+  sensitive is what let the `appId` through the first redaction — builder — 2026-08-27
+- The push to `origin` is deploy step 0, ahead of both dashboard actions — builder — 2026-08-27
 
 ## Open questions
-- None. Execution is waiting on the two dashboard actions above.
+- **The Firebase apiKey is already on the public `origin/main`** (`3a8bdaa`, 2026-08-25) and is
+  still in the file at the public tip. Pushing cleans the tip; only rotation at the Firebase console
+  ends the exposure, and that is Badrish's to do. Not urgent — Firestore rules and Google sign-in
+  are the actual guard — but open. Waiting on Badrish. See ticket 04.
