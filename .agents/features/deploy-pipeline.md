@@ -28,13 +28,21 @@ app installs to an Android homescreen.
 - [x] Tree assessed as safe to publish — builder, 2026-08-27. Full-tree credential scan; the one
       hit (a literal `appId` still recorded on ticket 04) is redacted, and the pre-commit guard now
       carries an app-id pattern with negative controls. See ticket 10.
-- [ ] **Badrish, step 0: push `main` to `origin`.** Nine commits, fast-forward. Cloudflare Pages
-      builds from GitHub and `origin/main` (`5da2840`) predates all application code, so connecting
-      the Pages project before this builds an empty tree.
-- [x] Push proposal prepared and pre-flighted — operations, 2026-08-27. Exact commit + push commands
-      in front of Badrish for one-word approval. Independently re-verified: fast-forward dry-run
-      clean, hook fires 0 on the real staged content, zero credential-shaped matches tree-wide.
-      Operations does not execute the push; see ticket 10.
+- [x] Push proposal prepared and pre-flighted, approved, and pushed — `main` is at `c70a301` on both
+      local and `origin`. Fast-forward, clean.
+- [x] `.gitattributes` added — operations, 2026-08-27, commit `a4e8862`. Forces `text=auto eol=lf`
+      repo-wide (one shape-based rule, not a pattern scoped to `.githooks/*` alone — the same
+      shape-based-not-judgement-based reasoning already applied to the credential rule), `*.png`
+      marked `binary` explicitly. Verified both directions: `git check-attr` on `.githooks/*` and
+      representative source/doc files resolves `eol=lf`; the three PNGs resolve `text=unset` via the
+      `binary` macro and `git add --renormalize .` on a clean tree left every tracked blob
+      byte-identical (no renormalization commit needed — nothing was stored with the wrong ending).
+      Also reproduced the actual failure mode live on this machine: `core.autocrlf=true` had already
+      drifted `.agents/features/editor-and-shell.md` and
+      `.scratch/notes-mvp/issues/04-provision-accounts.md` to CRLF in the working copy despite LF in
+      the index; re-checking them out after adding the attributes file produced clean LF, confirming
+      `eol=lf` overrides this machine's `core.autocrlf` rather than asserting it should. Not pushed —
+      Badrish's word, same as the last push.
 - [ ] **Badrish, step 1: connect the GitHub repo to the Pages project.**
 - [ ] **Badrish, step 2: set the four `VITE_FIREBASE_*` vars plus `NODE_VERSION=20` on Production
       and Preview.** The first build must not run before this — a bundle built without them fails at
@@ -56,6 +64,12 @@ app installs to an Android homescreen.
   is a pointer in the repo, never a value. Deciding value-by-value whether something is "really"
   sensitive is what let the `appId` through the first redaction — builder — 2026-08-27
 - The push to `origin` is deploy step 0, ahead of both dashboard actions — builder — 2026-08-27
+- `.gitattributes` uses one repo-wide `* text=auto eol=lf` rather than scoping the forced-LF rule to
+  `.githooks/*`/`*.sh` — operations — 2026-08-27. A pattern scoped to "the paths that need it today"
+  is exactly the shape the ESLint boundary rule and the pre-commit app-id gap both failed in: it's
+  provably correct for what it's tested against and silently wrong for the next file that needed it
+  and wasn't on the list. One universal rule is one thing to verify, not N patterns to keep in sync
+  with what's added later.
 
 ## Open questions
 - **The Firebase apiKey is already on the public `origin/main`** (`3a8bdaa`, 2026-08-25) and is
