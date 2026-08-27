@@ -1,0 +1,12 @@
+# Force LF for every tracked text file, in both the stored blob and the working
+# tree, on every OS and regardless of the cloning machine's core.autocrlf. This is
+# the same "shape-based, not judgement-based" rule the repo already applies to
+# credential handling: one pattern that covers everything, rather than a per-file
+# judgement call about which scripts "need" it. .githooks/* is the file that
+# actually matters (a CRLF shell script silently stops running, and it's the
+# secret guard), but scoping the rule to just that path is exactly the kind of
+# narrow pattern that can quietly stop matching what's added next.
+* text=auto eol=lf
+
+# Never let line-ending handling touch binary assets.
+*.png binary
