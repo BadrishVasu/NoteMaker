@@ -54,13 +54,50 @@ app installs to an Android homescreen.
       cause. Test written first (`src/test/devServerPorts.test.ts`, 3 cases, red before green), and
       verified in the other direction too — a second `vite` against a running one exits
       `Error: Port 5173 is already in use` instead of taking 5174.
-- [ ] **Badrish, step 1: connect the GitHub repo to the Pages project.**
-- [ ] **Badrish, step 2: set the four `VITE_FIREBASE_*` vars plus `NODE_VERSION=20` on Production
-      and Preview.** The first build must not run before this — a bundle built without them fails at
-      sign-in, not at build time, and reads as an auth bug.
-- [ ] Blank page live on the host
-- [ ] Sign-in smoke test passing on the deployed host (not localhost)
-- [ ] Installed to an Android homescreen
+- [x] **Badrish, step 1: connect the GitHub repo to the Pages project** — done 2026-09-01.
+- [x] **Badrish, step 2: the five environment variables** — done, and **verified present in the
+      deployed bundle** rather than taken from the dashboard showing them. This was the failure worth
+      checking: a bundle built without them fails at *sign-in*, not at build time, and reads as an
+      auth bug. All four `VITE_FIREBASE_*` values are inlined as real, well-formed literals
+      (apiKey matches `AIza[0-9A-Za-z_-]{35}` at 39 chars; authDomain is
+      `notemaker-claude.firebaseapp.com`; projectId is the expected slug; appId matches
+      `1:<project-number>:web:<hex>`), with no `undefined`, empty-string or placeholder shapes
+      anywhere in the bundle and no surviving `import.meta.env` reference. Shape and presence only —
+      no value was printed or recorded, per the standing rule.
+- [x] **Blank page live on the host** — `https://note-maker-f41.pages.dev/` serves the app, React
+      mounts, auth state resolves to the signed-out view. The boot-time `readConfig()` guard does not
+      trip, and the console is clean.
+- [x] **Sign-in preconditions verified live** — builder, 2026-09-01, via the non-authenticating
+      Identity Toolkit `getProjectConfig` call the Firebase SDK itself makes before a popup, issued
+      *from the deployed origin*. It returned **HTTP 200**, which is a three-in-one proof: the API
+      key is real and enabled (a placeholder returns 400 `API_KEY_INVALID`), the key's HTTP-referrer
+      restriction genuinely permits `note-maker-f41.pages.dev` (a blocked referrer returns 403
+      `API_KEY_HTTP_REFERRER_BLOCKED`), and the response's `authorizedDomains` list contains
+      `note-maker-f41.pages.dev`. Ticket 04's origin split is also live: the auth handler at
+      `notemaker-claude.firebaseapp.com/__/auth/handler` serves Firebase's real handler.
+- [x] **The `localhost` authorised-domain open question is closed** — it is still on the list, seen
+      in the same `authorizedDomains` response. This was recorded as "not verifiable from here" on
+      2026-08-27; it is now verified rather than assumed.
+- [x] **Service worker registered and `prompt` mode confirmed deployed** — one registration at root
+      scope, `sw.js` active and controlling the page, 8 workbox precache entries. `sw.js` is served
+      as `application/javascript` and is **not** an SPA HTML fallback, which is the silent way this
+      breaks. Confirmed `prompt` and not `autoUpdate` from the deployed artifact itself: no
+      unconditional `skipWaiting()`, no `clientsClaim`, and a `SKIP_WAITING` message listener the app
+      triggers on accept. Badrish's 2026-08-26 decision is now locked by a real deploy.
+- [x] **Installable** — `manifest.webmanifest` served as `application/manifest+json`, `display:
+      standalone`, `start_url`/`scope` `/`, and all three icons (192, 512, 512-maskable) return 200
+      as real `image/png`. Secure context. Icons remain placeholder art — real ones are UI/UX's at
+      step 6.
+- [ ] **Sign-in completed end to end on the deployed host** — the only step left, and it is
+      Badrish's: it needs a real Google account, which no agent may authenticate. Every precondition
+      it depends on is verified above, so what remains is one click. An agent attempt returned
+      `auth/popup-blocked` from the automation browser — an artifact of that browser, not the deploy.
+      Worth noting the app handled it correctly, rendering the friendly message plus the error code.
+- [ ] **Installed to an Android homescreen** — Badrish's, same reason: needs a real device. Every
+      installability criterion is met above.
+- [ ] **The `prompt` update bar has not been exercised**, and could not be by this deploy. A waiting
+      service worker only exists once a *second* build is deployed, so the update-available bar first
+      becomes testable on the next deploy. Flagged so it is checked then rather than assumed.
 
 ## Decisions
 - Deploy runs **before any feature work**, and carries the auth smoke test with it — builder,
@@ -83,7 +120,14 @@ app installs to an Android homescreen.
   with what's added later.
 
 ## Open questions
-- **The Firebase apiKey is already on the public `origin/main`** (`3a8bdaa`, 2026-08-25) and is
-  still in the file at the public tip. Pushing cleans the tip; only rotation at the Firebase console
-  ends the exposure, and that is Badrish's to do. Not urgent — Firestore rules and Google sign-in
-  are the actual guard — but open. Waiting on Badrish. See ticket 04.
+- **The Firebase apiKey exposure — a new key is deployed; whether the old one was revoked is
+  unverified.** Established 2026-09-01: the key inlined in the live bundle is **not** the key sitting
+  in public git history at `3a8bdaa`. Compared by SHA-256 (deployed `8fbc08a5…` vs historical
+  `f4b4336a…`), so neither value had to be handled to reach the answer. That is strong evidence
+  Badrish rotated. **What it does not establish is that the exposed key was disabled** — minting a
+  new key and deleting the old one are separate actions, and only the second one ends the exposure.
+  An attempt to probe the old key directly was blocked by the permission classifier, correctly, and
+  was not worked around. This is now a one-look check for Badrish: Google Cloud console →
+  APIs & Services → Credentials, confirm the old key is deleted or fully restricted. Not urgent —
+  Firestore rules and Google sign-in are the real guard — but it should be closed rather than
+  assumed. See ticket 04.

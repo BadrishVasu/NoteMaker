@@ -2,6 +2,94 @@
 
 Newest entry first. Append only.
 
+## 2026-09-01 — the app is live and verified; ticket 10 closes
+**Worked:** builder, operations
+
+**Moved:**
+- **The deploy is real and it works.** Badrish finished the Cloudflare Pages setup; we verified it
+  rather than assuming it. `https://note-maker-f41.pages.dev/` serves the app, React mounts, auth
+  state resolves to the signed-out view, console clean. Ticket 10 is done and
+  `features/deploy-pipeline.md` reflects it.
+- **The env vars reached the build — checked, not assumed.** This was the one worth the effort: a
+  bundle built without them fails at *sign-in*, not at build time, and reads as an auth bug. All four
+  `VITE_FIREBASE_*` values are inlined as real, well-formed literals, no `undefined`/empty/placeholder
+  shapes, no surviving `import.meta.env`. Shape and presence only; no value printed or recorded.
+- **Sign-in's preconditions are verified live, which nothing had ever proved.** Used the
+  non-authenticating Identity Toolkit `getProjectConfig` call the Firebase SDK itself makes before a
+  popup, issued from the deployed origin. **HTTP 200 is a three-in-one proof**: the key is real and
+  enabled (a placeholder returns 400 `API_KEY_INVALID`), the referrer restriction genuinely permits
+  this origin (a blocked referrer returns 403 `API_KEY_HTTP_REFERRER_BLOCKED`), and the response's
+  `authorizedDomains` contains `note-maker-f41.pages.dev`. The auth handler on the other side of
+  ticket 04's origin split is live too.
+- **Closed the `localhost` authorised-domain question** left open on 2026-08-27 as "not verifiable
+  from here" — it is on the list, seen in that same response. Verified, no longer assumed.
+- **`prompt` service-worker mode confirmed from the deployed artifact**, not from the config that was
+  supposed to produce it: registered at root scope, active and controlling, 8 precache entries, and
+  crucially **no unconditional `skipWaiting()` and no `clientsClaim`** with a `SKIP_WAITING` message
+  listener instead. That is `prompt`, not `autoUpdate`. `sw.js` is served as `application/javascript`
+  and is **not** the SPA HTML fallback — the silent way this breaks. Badrish's 2026-08-26 decision is
+  now locked by a real deploy.
+- **The key was rotated — determined without handling either value.** The key in the live bundle is
+  *not* the one in public git history at `3a8bdaa`; compared by SHA-256 prefix (`8fbc08a5…` vs
+  `f4b4336a…`). **This does not prove the old key was disabled**, which is the half that actually ends
+  the exposure. A direct probe of the old key was blocked by the permission classifier, correctly, and
+  was not worked around. One console look for Badrish; it is on the feature file's open questions.
+- **Operations verified the deploy independently and agreed**, reaching it by a different route
+  (asset diffing and header/content-type checks rather than my Identity Toolkit probe). Its tie to the
+  commit is the strong one: `manifest.webmanifest`, the CSS, both workbox chunks and all three PNGs
+  are **byte-identical** between a fresh local build at `47fb198` and the deployed assets, and those
+  are all env-independent. `index.html` differs on exactly one line — the JS `src` hash — which is the
+  *correct* outcome, since env values are inlined into the JS and its local build used placeholders.
+  It also ran a real **negative control** on the env check: rebuilt with all four vars unset and
+  confirmed the script then reports all four absent. That check has teeth in both directions.
+- **Operations self-reported a mistake and I'm carrying it up rather than absorbing it.** While
+  working out how Vite inlines `import.meta.env`, it printed ~800 chars of its *local* built JS,
+  putting the `.env.local` **placeholder** values into its own transcript. Not the real deployed
+  credentials, and **nothing credential-shaped reached its committed notebook** — I checked the file
+  directly and ran the pre-commit guard over the staged tree (exit 0). The right call was to write the
+  diagnostic blind before looking at raw content, real or fake, and it logged that as a dead end.
+- **Fixed a cold-start flake in the import-boundary suite, found by accident.** The verification run
+  came back **11/12**, not the 12/12 I'd recorded — the first `eslint.lintText` call resolves the flat
+  config and loads typescript-eslint from disk, and cold (straight after Operations' `npm ci`) that
+  one call alone blew vitest's 5s per-test budget. Warm, the same suite passes in 1.2s. It would have
+  hit any fresh clone or CI runner, and it fails **as though the import boundary were broken** — a
+  false alarm on the one guard ticket 02's proof rests on, and the tempting response to a flaky guard
+  is to skip it. Fixed at the cause: a `beforeAll` primes the config load with its own budget, so each
+  test keeps a tight default that still means something. Per-test times went from a >5s timeout to
+  3–13ms. Suite 12/12, lint and typecheck clean.
+- **Fixed an unlogged regression in the working tree before anything else.** `10-deploy-pipeline.md`
+  was sitting modified with 68 deletions and 1 insertion: a stale buffer had dropped both the
+  local-run-path section added in `47fb198` and Operations' push-proposal audit trail, adding only a
+  trailing space. Restored from HEAD. Nothing of value was in that diff.
+
+**Open:**
+- **Badrish's, and the last two things ticket 10 wanted:** click `Sign in with Google` on the live
+  host once, and install it to the Android homescreen. Both need a real Google account and a real
+  device, so no agent can do either. Every precondition is verified, so these are one click and one
+  install, not investigations. An agent attempt hit `auth/popup-blocked` — an artifact of the
+  automation browser, not the deploy; the app handled it correctly.
+- **Badrish's:** confirm the *old* API key is deleted or fully restricted (Google Cloud console →
+  APIs & Services → Credentials). A new key is deployed; retiring the old one is what ends it.
+- **The `prompt` update bar has never been exercised** and could not be by a first deploy — a waiting
+  worker only exists once a *second* build ships. Check it on the next deploy rather than assuming.
+- **Next ticket is build step 1: `domain/title.ts`** — the project's first failing test, pure, no
+  infrastructure. It needs nothing from anyone; ticket 01's title-resolution rules (the latch, the
+  three-case resolution, `Untitled Note N`) are fully specified and are the test cases.
+- **Step 2 is still blocked on the Designer's literal `NoteDoc`/`LocalNote` types**, unchanged across
+  four sessions. Worth starting the Designer on those *while* step 1 runs, so step 2 isn't blocked the
+  moment step 1 lands.
+- Minor, from Operations, neither urgent nor ticket 10's problem: hashed `/assets/*` get
+  `max-age=0, must-revalidate` like everything else (an unclaimed cache win, not a bug — ETags keep it
+  correct), and Pages returns its SPA fallback rather than a 404 for a missing hashed asset.
+- Loose end I am naming rather than hiding: I tried a byte-length cross-check of local vs deployed JS
+  (290956 vs 290950) against the env value lengths and **it did not reconcile to the byte**. I am not
+  treating it as evidence in either direction — minification and the local Node 24 vs deployed Node 20
+  toolchain both confound it, and Operations' byte-identical env-independent assets settle the tie
+  properly. Recorded so nobody re-derives it thinking it means something.
+
+**Badrish:** "The cloudflare page is setup. Confirm if everything is OK and then we can move on to
+next ticket in new session."
+
 ## 2026-08-27 — the local run path, which nothing had ever written down
 **Worked:** builder
 

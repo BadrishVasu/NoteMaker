@@ -1,5 +1,78 @@
 # Builder's notebook — NoteMaker
 
+## 2026-09-01 — verifying a deploy without being able to log in
+
+The deploy works. The interesting part is *how* I got to a real confirmation given the one thing I
+categorically cannot do is authenticate a Google account.
+
+### The move worth remembering: find the non-authenticating probe
+
+The naive read is "sign-in can't be verified by an agent, so report the preconditions as unverified
+and hand it to Badrish." That would have been true and useless. The better question was **what does
+the SDK itself do before it opens the popup** — and the answer is a plain `GET` to Identity Toolkit's
+`getProjectConfig`, no credentials involved. Issued *from the deployed origin*, a 200 collapses three
+separate unknowns at once:
+
+- the API key is real and enabled — a placeholder returns 400 `API_KEY_INVALID`
+- the HTTP-referrer restriction genuinely permits this origin — a blocked one returns 403
+  `API_KEY_HTTP_REFERRER_BLOCKED`
+- and the response body *hands you* `authorizedDomains`, which is the Firebase Auth list itself
+
+That last one also closed the `localhost` question I'd left open on 2026-08-27 as "not verifiable
+from here, but almost certainly fine." It was fine — but I'd written a guess into the logbook and it
+sat there for four sessions. **The generalisation: when a step is blocked because it needs a human,
+ask what the machine does immediately *before* that step. The precondition is usually queryable even
+when the action isn't.**
+
+### My first shape check silently found nothing, and the control caught it
+
+I regexed the deployed bundle for `["'](AIza[0-9A-Za-z_-]{35})["']` and got **no match** — which,
+read carelessly, says "the env vars didn't reach the build." I nearly had a false alarm rather than a
+false pass, which is the same disease in the other direction.
+
+What saved it was running the regex against a **known-good fake string** first. It fired. So the
+regex worked and the bundle was the thing that differed — esbuild had emitted the value inside
+**backticks**, and my character class only allowed `"` and `'`. Five minutes, and the difference
+between "the deploy is broken" and "my check was wrong."
+
+This is the fifth time on this project that testing a check in both directions has paid out, and the
+first time the failure was a **false negative** rather than a false pass. I'd internalised "a guard
+that matches nothing looks like a clean repo." The mirror is just as expensive: **a check that
+matches nothing looks like a broken system.** Positive control before you believe a negative result,
+not just before you believe a positive one.
+
+### Answering the rotation question without touching either value
+
+Badrish never said whether he rotated. Rather than ask him and burn a blocking question, I hashed the
+deployed key inside the page and compared the SHA-256 prefix to a hash of the value in git history at
+`3a8bdaa`. Different — so he rotated. **A hash prefix is not a credential**, so this answered a
+question about two secrets while handling neither, and nothing quotable entered the transcript.
+
+Where I stopped: I wanted to know whether the *old* key still works, which is the half that actually
+ends the exposure. The permission classifier blocked the request, correctly — it looks exactly like
+transmitting a credential, because it is. I did not route around it. It goes to Badrish as a one-look
+console check. **Worth noting the block was right and my intent was defensible at the same time; the
+lesson isn't "the classifier was wrong," it's that the last step of a security check often belongs to
+the human by construction.**
+
+### On not spawning QA
+
+I brought in Operations (deploy is its domain, and it re-derived the commit tie independently, which
+is the whole point of a second agent) and deliberately **did not** spawn QA. QA has no browser and no
+`WebFetch` — it could only have reached the live site through `curl`, duplicating Operations, and the
+one thing genuinely left is a Google sign-in no agent may perform. Spawning it would have been
+process theatre. Recording the reasoning because "the brief mentioned QA" is exactly the pressure
+that produces a pointless spawn.
+
+### A loose end I chose to name instead of dress up
+
+I tried cross-checking local vs deployed JS byte counts (290956 vs 290950) against the env value
+lengths. **It didn't reconcile**, even after accounting for quoting in `.env.local`. Minification and
+local Node 24 vs deployed Node 20 both confound it. The honest move was to discard it rather than
+find an arithmetic that made it land — Operations' byte-identical env-independent assets settle the
+tie properly and don't need my worse check propping them up. **A weak check that half-agrees is worth
+less than no check, because it invites you to reason backwards to the answer you already want.**
+
 ## 2026-08-27 — the documentation gap I'd have called a user error
 
 Badrish asked how to run it locally and described hand-editing the values into `firebase.ts` and

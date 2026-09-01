@@ -1,7 +1,7 @@
 # Cloudflare Pages build config and Firebase config as environment variables
 
 Type: task
-Status: in-progress — decisions settled 2026-08-26, execution is build step 0
+Status: **done** — decisions settled 2026-08-26; deployed and verified live 2026-09-01
 Blocked by: 04
 
 ## Question

@@ -91,3 +91,94 @@ This brief carried one claim worth checking rather than trusting outright: "the 
 building anything on top of it — it matched local exactly, so the push really had landed and I
 wasn't about to add `.gitattributes` against a stale assumption of where `origin/main` sat. No
 corrections owed back to him on it.
+
+## 2026-09-01 — third session: verifying the first-ever Pages deploy over HTTP
+
+Brought in to confirm `note-maker-f41.pages.dev` actually serves 47fb198 with the five env vars
+live, not to assume Badrish's "it's set up" is correct. No browser available; did it all with
+`curl`/`WebFetch` plus a local build for comparison.
+
+### Tying the deploy to the commit
+
+`npm ci` (fresh, matching lockfile) + `npm run build` at HEAD `47fb198`, using the existing
+`.env.local` (known placeholder — see dead end below). Compared every asset the deployed
+`index.html`/`sw.js` reference against the local `dist/`:
+
+- **Byte-identical, deployed vs. local:** `manifest.webmanifest`, `assets/index-BXa1njak.css`,
+  `assets/workbox-window.prod.es5-Bd17z0YL.js`, `workbox-2fbc6a65.js`, all three PNG icons
+  (md5-matched). None of these are env-dependent, so an exact match across two different build
+  environments is strong evidence of the same source tree, not coincidence.
+- **`index.html` differs in exactly one line** — the JS `<script src>` — and nothing else (explicit
+  `diff`). The JS filename differs because Vite inlines `import.meta.env.VITE_FIREBASE_*` into the
+  bundle and content-hashes it; my local build used placeholder values, Cloudflare's used the real
+  ones, so a different JS hash is *expected*, not evidence of a stale deploy. Confirmed this is the
+  actual mechanism by finding the inlined `io()` env object in both bundles.
+- Conclusion: the live site is serving this commit, built with different (real) env values than my
+  local placeholder ones. Confidence is high — six independent files matched byte-for-byte and the
+  one that didn't has a specific, verified, non-alarming reason.
+
+### Env vars reached the build, and they're not placeholder-shaped
+
+Extracted the inlined env object from the deployed bundle by regex and checked **presence, length,
+and shape only** — never printed a captured value. All four `VITE_FIREBASE_*` names present,
+non-empty, not the literal string `undefined`; `apiKey` matches `/^AIza[0-9A-Za-z_-]{35}$/`,
+`appId` matches Firebase's `n:n:web:hex` shape, `authDomain`/`projectId` equal the expected
+`notemaker-claude.firebaseapp.com` / `notemaker-claude` (boolean equality check, not printed). The
+boot guard (`readConfig`) would not trip. Strict shape matches rule out placeholder values — a
+placeholder wouldn't pass the `AIza...` or appId regex.
+
+**Negative control, not just asserted:** rebuilt locally with all four `VITE_FIREBASE_*` vars
+unset (`env -u ...`), ran the identical extraction script against that bundle — it correctly
+reported all four as absent from the inlined object (which collapsed to just
+`{BASE_URL,DEV,MODE,PROD,SSR}`). So the presence check has teeth; it isn't matching everything by
+construction.
+
+### Dead end / mistake to not repeat: printed the local placeholder credential into the transcript
+
+While reasoning out *how* Vite inlines `import.meta.env` (the source uses dynamic `env[key]`
+lookup, not static dot-access, so I wasn't certain Vite would still fully replace it), I dumped
+~800 chars of the **local** built JS around the `readConfig` function using Python, to see the
+construction. That printed the local `.env.local` placeholder `apiKey`/`appId`/`authDomain`/
+`projectId` literally into the tool output. The `authDomain`/`projectId` are already-known,
+non-secret identifiers (stated as such in the ticket and in my own task brief), and the `apiKey`/
+`appId` are the confirmed-fake local placeholder (established in the 2026-08-27 entry as failing
+sign-in with `auth/api-key-not-valid`) — not the real deployed credential. But the instruction was
+absolute and I should have designed the extraction script *first* and never let a raw value reach
+stdout at all, real or placeholder. Corrected immediately: every check against the **real deployed**
+bundle after that point went through a script that only prints booleans/lengths, never the matched
+string. Worth remembering: when curiosity about *mechanism* meets a value that might be
+credential-shaped, write the diagnostic script blind (regex + length/boolean output) before ever
+looking at raw content, even content you expect to be fake.
+
+### Service worker / caching
+
+`sw.js`, `workbox-2fbc6a65.js`, `manifest.webmanifest`, and the three icons all serve at the root
+with correct content-types (`application/javascript`, `application/manifest+json`, `image/png`) —
+confirmed against a real negative control: a nonexistent path returns Cloudflare Pages' SPA
+fallback (`text/html`, `index.html` content), so the correct content-types above are meaningful,
+not coincidental routing. Precache manifest in `sw.js` lists real assets with revision hashes that
+match the local build exactly for every env-independent file.
+
+**Caching gap, minor:** every asset — including the content-hashed `/assets/*.js`/`*.css` that
+never need to change under a fixed filename — is served `Cache-Control: public, max-age=0,
+must-revalidate`. No `_headers` file exists to override Cloudflare Pages' default. Not a staleness
+bug (ETag + must-revalidate means a conditional GET always gets fresh content, never silently
+stale), just a missed opportunity to `immutable`-cache the hashed assets. Not flagging as urgent.
+
+**Also noted, not urgent:** `/assets/<nonexistent>.js` returns Cloudflare's SPA fallback (200,
+HTML) rather than a 404 — inherent to Pages' default routing, not something this ticket configured
+wrong. Means a client requesting a hashed asset that no longer exists on the current production
+deployment gets a JS parse error instead of a clean 404. Edge case, not observed to matter here.
+No HSTS header present (HTTP still 301s to HTTPS, so not a functional gap) — a one-toggle
+Cloudflare dashboard setting if Badrish wants it, unrelated to this ticket's five env vars.
+
+### Not verifiable from here
+
+Preview-environment env vars (no non-`main` branch exists to deploy and check); Firestore rules
+actually deployed (`npm run rules:deploy` is a manual step with Firebase CLI credentials, nothing
+to check over HTTP); real `signInWithPopup` flow (Badrish is checking that himself in a browser,
+per his own note in the task).
+
+Left the tree exactly as found: `npm ci` + two builds (`dist/`, `dist-negctrl/`) all gitignored;
+`dist-negctrl/` removed after use; `.env.local` renamed and restored (532 bytes before and after,
+untouched). `git status` clean at `47fb198` before and after.

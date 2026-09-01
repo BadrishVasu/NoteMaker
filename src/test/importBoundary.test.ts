@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import { ESLint } from 'eslint'
 
 /**
@@ -22,6 +22,24 @@ async function messagesFor(filePath: string, source: string): Promise<string[]> 
 function hasRestrictedImport(messages: string[]): boolean {
   return messages.some((m) => m.startsWith('no-restricted-imports'))
 }
+
+/**
+ * Prime ESLint before the timed tests run.
+ *
+ * The FIRST `lintText` call is the expensive one: it resolves the flat config and loads
+ * typescript-eslint from disk. Warm, every case here finishes in milliseconds; cold — a fresh clone,
+ * a CI runner, or straight after `npm ci` — that first call alone can exceed vitest's 5s per-test
+ * budget, and the test that pays the cost is whichever happens to run first.
+ *
+ * Observed 2026-09-01: this suite failed 1/12 on a cold cache and passed 12/12 immediately after.
+ * A timeout here reads as "the import boundary is broken", which is a false alarm on the one guard
+ * that ticket 02's proof actually rests on — and the tempting response to a flaky guard is to skip
+ * it. So the config load gets its own generous budget here, and each test below keeps a tight
+ * default that still means something: with the config already loaded, a slow case is a real signal.
+ */
+beforeAll(async () => {
+  await messagesFor('src/test/__warmup__.ts', 'export const warm = true\n')
+}, 120_000)
 
 describe('the firebase/firestore import boundary', () => {
   it('rejects firebase/firestore from an ordinary module', async () => {
