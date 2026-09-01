@@ -118,16 +118,16 @@ app installs to an Android homescreen.
   provably correct for what it's tested against and silently wrong for the next file that needed it
   and wasn't on the list. One universal rule is one thing to verify, not N patterns to keep in sync
   with what's added later.
+- **The Firebase apiKey exposure is closed: rotated and the old key retired** — confirmed by
+  Badrish, 2026-09-01. This is his assertion, not a console check performed by any agent — no agent
+  has verified the old key's deleted/restricted status directly in the Google Cloud console. Kept for
+  the record: established 2026-09-01, the key inlined in the live bundle is **not** the key sitting in
+  public git history at `3a8bdaa` — compared by SHA-256 prefix (deployed `8fbc08a5…` vs historical
+  `f4b4336a…`), so neither value had to be handled to reach that finding — which was the evidence that
+  a new key had been minted. A direct probe of the old key was blocked by the permission classifier,
+  correctly, and was not worked around. Badrish's 2026-09-01 confirmation supplies the half that
+  actually ends the exposure: the old key is not just superseded but deleted or fully restricted. See
+  ticket 04.
 
 ## Open questions
-- **The Firebase apiKey exposure — a new key is deployed; whether the old one was revoked is
-  unverified.** Established 2026-09-01: the key inlined in the live bundle is **not** the key sitting
-  in public git history at `3a8bdaa`. Compared by SHA-256 (deployed `8fbc08a5…` vs historical
-  `f4b4336a…`), so neither value had to be handled to reach the answer. That is strong evidence
-  Badrish rotated. **What it does not establish is that the exposed key was disabled** — minting a
-  new key and deleting the old one are separate actions, and only the second one ends the exposure.
-  An attempt to probe the old key directly was blocked by the permission classifier, correctly, and
-  was not worked around. This is now a one-look check for Badrish: Google Cloud console →
-  APIs & Services → Credentials, confirm the old key is deleted or fully restricted. Not urgent —
-  Firestore rules and Google sign-in are the real guard — but it should be closed rather than
-  assumed. See ticket 04.
+None open as of 2026-09-01.

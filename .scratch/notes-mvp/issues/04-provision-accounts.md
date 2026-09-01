@@ -65,24 +65,28 @@ appId               <not recorded — VITE_FIREBASE_APP_ID, see "Where the value
 build: ticket 10 omits the first two deliberately (no Cloud Storage, no FCM) and there is no
 Analytics in this product. An unused config field is a thing a future contributor wires something to.
 
-### The apiKey is already published, and rotation is Badrish's call
+### The apiKey was published, and the exposure is closed
 
-Recorded 2026-08-27 so it is not rediscovered. The commit that first pasted the key, `3a8bdaa`, was
-**pushed to the public `origin/main` on 2026-08-25**. The redaction commit `662360f` was not, so as
-of today the file at the public tip *still contains the literal key*, and the working tree in this
-clone is the only place it is redacted.
+Recorded 2026-08-27, updated 2026-09-01. The commit that first pasted the key, `3a8bdaa`, was
+**pushed to the public `origin/main` on 2026-08-25**. The redaction commit `662360f` reached
+`origin/main` in the same session's push, so the public tip has carried the redacted file (a pointer,
+not the value) since that push, not just this clone's working tree.
 
-Two consequences:
+**The exposure is closed.** Badrish confirmed, 2026-09-01, that the key is **rotated and the old key
+retired** — a replacement web API key is live and the old one is deleted or fully restricted. This is
+his assertion; no agent verified the old key's state directly in the Google Cloud console. It is
+sufficient: rotation and retirement at the provider is the one action that ends this kind of exposure,
+and it is Badrish's call to make and report, not an agent's to independently confirm.
 
-- **Pushing does not make this worse — it makes the tip clean.** The key is already indexed. The
-  first push removes it from the current file; it stays in `3a8bdaa` in history regardless.
-- **History rewriting is not the remedy and is not the Builder's to perform.** A force-push does not
-  retract a value a scanner has already read, and GitHub retains unreachable commits.
-  **Rotation at the Firebase console is the only real fix, and it is Badrish's.** Rotating means
-  minting a replacement web API key, re-applying the referrer restriction from step 4 below, and
-  updating `VITE_FIREBASE_API_KEY` in Cloudflare Pages and in `.env.local`. It is not urgent in the
-  sense of a leaked secret — Firestore rules and Google sign-in are what actually guard the notes,
-  and the referrer restriction caps quota abuse — but it is the one action that ends the exposure.
+Two lessons from this episode remain true and are why this section still exists:
+
+- **History rewriting is not the remedy and was never attempted.** A force-push does not retract a
+  value a scanner has already read, and GitHub retains unreachable commits regardless. The exposed
+  value stays permanently in `3a8bdaa`'s history; nothing rewrites that.
+- **Rotation (and retirement) at the provider is what actually ends an exposure** — not a redaction
+  commit, not a force-push. Redacting the tracked file and pushing made the *current* state clean;
+  only minting a replacement key and disabling the old one closes the window the published value
+  opened.
 
 ### Where the values live
 

@@ -224,9 +224,11 @@ rather than an assumption.
   `.env.example` holds the four names, no values. `.env.example` is the only env file tracked.
 - Nothing else in the tree is sensitive: source, config, tickets and the logbook.
 
-**The one thing publishing does not fix** is that the apiKey is *already* public — it went to
-`origin/main` in `3a8bdaa` on 2026-08-25 and is still in the file at the public tip. Pushing
-improves that (the tip becomes clean); only rotation ends it. See ticket 04.
+**The apiKey was already public** — it went to `origin/main` in `3a8bdaa` on 2026-08-25. Both stale
+notes on that are now corrected: the redaction reached `origin/main` in the 2026-08-27 push, so the
+public tip has carried a pointer, not the value, since then; and the exposure itself is closed —
+Badrish confirmed 2026-09-01 that the key is rotated and the old key retired (his assertion, not an
+agent's console check). See ticket 04.
 
 Everything else in this ticket is the Builder's and runs from the repo.
 
