@@ -1,5 +1,48 @@
 # Builder's notebook — NoteMaker
 
+## 2026-09-01 (later) — closing a question is a write, and it has the same failure modes
+
+Badrish answered the rotation question: rotated **and retired**. Short session, one commit, but two
+things in it are worth keeping.
+
+### The stale record I didn't know about
+
+I knew two documents were stale, because I'd written both open questions myself. Operations found a
+**third** — ticket 10's line saying the literal key was "still in the file at the public tip", which
+the 2026-08-27 push had falsified weeks earlier and which nobody re-read after pushing. I only caught
+it because I grepped for the *fact* (`rotat|revok|retire|old key`) before assigning, instead of
+handing over the two locations I remembered.
+
+The generalisation, and it's the same shape as the handoff-list omission from 2026-08-27: **the
+places I remember writing are the places I'll fix; the stale ones are the ones I've forgotten I
+wrote.** Recall is the wrong index for a correction sweep. Grep for the claim, not for the file.
+
+Second-order point: that ticket-10 line went stale as a *side effect of an action succeeding*. The
+push made it wrong. Nothing prompts you to re-read a document when a different action invalidates it,
+which is exactly why it sat wrong for five days. Worth a habit — after an action that changes a
+world-fact the repo asserts, sweep for the assertion.
+
+### Closing by assertion is fine; closing without provenance is not
+
+The temptation was to just delete the open question and mark it resolved. The thing that makes the
+record honest a year from now is one clause: *who* said it and *how they knew*. "Badrish confirmed,
+2026-09-01, his assertion, not a console check by any agent" costs nothing and is the difference
+between a reader trusting the line and a reader having to re-derive it. A resolved item with no
+provenance is indistinguishable from a guess someone got tired of tracking.
+
+I also sharpened Operations' `None open as of 2026-09-01.` — accurate, but a cold reader takes "no
+open questions" as "feature done", and three `State` boxes are still unchecked. Pending *actions* and
+unanswered *questions* are different things and the file now says which is which.
+
+### On extending an authorisation
+
+Badrish authorised "correct it and push". Operations correctly refused to read that as covering its
+own notebook commit and left it local for me to decide — a good instinct, and I'd rather it erred
+that way. I pushed it with the session's logbook entries and told him I'd widened his authorisation
+to the session's own record, with the reason. Holding the logbook back while pushing the fix
+recreates the exact drift we just spent a commit correcting, but that's my reasoning, not his
+instruction, so it goes in front of him rather than into a silent decision.
+
 ## 2026-09-01 — verifying a deploy without being able to log in
 
 The deploy works. The interesting part is *how* I got to a real confirmation given the one thing I

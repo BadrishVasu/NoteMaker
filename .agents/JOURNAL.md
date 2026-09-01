@@ -2,6 +2,43 @@
 
 Newest entry first. Append only.
 
+## 2026-09-01 — the key is retired; the record now says so, and it's pushed
+**Worked:** builder, operations
+
+**Moved:**
+- **Badrish confirmed the Firebase apiKey is rotated *and retired*** — the old key published at
+  `3a8bdaa` is deleted or fully restricted. The exposure open since 2026-08-25 is closed. Three
+  documents said otherwise and were corrected by Operations in `2871193`:
+  `features/deploy-pipeline.md` (the open question moved into `Decisions` as a resolved fact),
+  `04-provision-accounts.md` (the section that still framed rotation as a pending call), and
+  `10-deploy-pipeline.md`, which was stale on **two** axes — it claimed the public tip still carried
+  the literal key, which the 2026-08-27 push had already falsified. That third one was found by
+  sweeping for the fact rather than fixing the two places I already knew about.
+- **The correction is attributed, not asserted.** Every closure names Badrish and 2026-09-01 as the
+  source and says explicitly that no agent verified the deletion in a console. A closed question with
+  no provenance is the same failure the notebook correction caught earlier this project, and it costs
+  one clause to avoid.
+- **Pushed.** `origin main`, fast-forward, `47fb198..2871193`. Operations re-ran the fast-forward
+  check at push time rather than trusting mine from minutes earlier, and confirmed the remote tip
+  matches local afterwards. The pre-commit guard ran and passed; nothing was bypassed.
+- **Ticket 10 and build step 0 are done.** Everything an agent can close is closed. What remains on
+  the feature file is two physical acts of Badrish's (one Google sign-in on the live host, one Android
+  install) and one thing that is *impossible* until the next deploy exists — the `prompt` update bar,
+  which needs a second build before a waiting worker can exist.
+
+**Open:**
+- **Badrish's, unchanged and unblocked:** the live sign-in click and the homescreen install. Every
+  precondition for both is verified; neither is an investigation.
+- **The `prompt` update bar** gets exercised on the next deploy, whatever ships it.
+- **Next session opens on build step 1, `domain/title.ts`** — the project's first failing test, pure,
+  no infrastructure, needing nothing from anyone. Ticket 01's title rules are the test cases.
+- **The Designer should start the literal `NoteDoc`/`LocalNote` types in parallel**, not after. Step 2
+  has been blocked on them for five sessions and step 1 does not touch them, so the two run
+  concurrently or step 2 stalls the moment step 1 lands.
+
+**Badrish:** "Correct it and push" — and, answering the standing question, that the key is
+**rotated and retired**, not merely rotated.
+
 ## 2026-09-01 — the app is live and verified; ticket 10 closes
 **Worked:** builder, operations
 

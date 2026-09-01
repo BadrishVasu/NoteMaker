@@ -130,4 +130,6 @@ app installs to an Android homescreen.
   ticket 04.
 
 ## Open questions
-None open as of 2026-09-01.
+None open as of 2026-09-01. Note this does not mean the feature is finished: three items in `State`
+are still unchecked — Badrish's end-to-end sign-in, the Android install, and exercising the `prompt`
+update bar on the next deploy. Those are pending *actions*, not unanswered questions.
