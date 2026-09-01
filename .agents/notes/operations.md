@@ -182,3 +182,43 @@ per his own note in the task).
 Left the tree exactly as found: `npm ci` + two builds (`dist/`, `dist-negctrl/`) all gitignored;
 `dist-negctrl/` removed after use; `.env.local` renamed and restored (532 bytes before and after,
 untouched). `git status` clean at `47fb198` before and after.
+
+## 2026-09-01 — fourth session: record correction, and the second push
+
+Brought in for two things in order: correct three stale documents now that Badrish confirmed (his
+words, "rotated and retired") the apiKey exposure is closed, then commit and push — this time with
+explicit authorisation to run `git push` myself, unlike the first session where I only prepared the
+proposal.
+
+### What I corrected, and what I deliberately didn't touch
+
+Three files: `.agents/features/deploy-pipeline.md` (moved the resolved fact from Open Questions into
+Decisions, left Open Questions empty), `.scratch/notes-mvp/issues/04-provision-accounts.md` (rewrote
+the section heading and body that still framed rotation as pending), `.scratch/notes-mvp/issues/10-deploy-pipeline.md`
+(corrected a note stale on two axes — it said the public tip still held the literal key, which the
+2026-08-27 push had already fixed, and that only rotation remained, which is now done). Ran the grep
+sweep across `.agents` and `.scratch` first rather than trusting the brief's list of three was
+exhaustive — it wasn't wrong, but I checked rather than assumed. Everything else that matched
+"rotat|revok|retire" was either the unrelated `deviceId` rotation in the sync engine, or lines inside
+`.agents/JOURNAL.md`/`.agents/notes/builder.md` that are not mine to edit and were correctly left
+alone.
+
+The one judgment call: attribution wording. The brief was explicit that this is Badrish's assertion,
+not a console check, and that the difference has to survive to someone reading cold in three months.
+I wrote "confirmed by Badrish, 2026-09-01" plus an explicit "not a console check performed by any
+agent" sentence in all three places rather than a single soft "resolved" — redundant across three
+files, but the failure mode being guarded against (an open question closed by bare assertion with no
+record of who or how) is exactly what this task existed to fix, so I didn't economize on it.
+
+### Commit, then push, both mine this session
+
+Staged exactly the three files (`git status --porcelain` after `git add` showed nothing else picked
+up). Pre-commit hook ran and passed — no credential-shaped content, nothing to route back to
+Badrish about a hook failure. Committed at `2871193`.
+
+Pre-flighted the push properly rather than trusting the numbers in my brief, which were stated as
+"minutes old, don't rely on it": `git fetch origin` immediately before pushing, confirmed
+`origin/main` (`47fb198`) was still an ancestor of local `main` before running `git push`. Pushed
+clean fast-forward `47fb198..2871193`. Fetched again after and confirmed `origin/main` now equals
+local `main` at `2871193` — didn't take the push command's own success output as sufficient, checked
+the remote state independently.
