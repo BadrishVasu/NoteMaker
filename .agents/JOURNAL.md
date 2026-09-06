@@ -2,6 +2,51 @@
 
 Newest entry first. Append only.
 
+## 2026-09-06 — the types landed, and writing them found a hole in the spec
+**Worked:** designer, builder, operations
+
+**Moved:**
+- **`src/domain/note.ts` exists as literal, compiling types** — `architecture.md` → "The types".
+  Step 2 has been blocked on this for five sessions; it is unblocked. Nine wire fields, four
+  local-only ones, one serialisation boundary (`toNoteDoc`), and a step-2-ordered list of testable
+  seams.
+- **Writing them found a real specification hole, which is why it was worth doing before step 2
+  rather than during it.** Ticket 02 requires a Conflict copy to carry `conflictBase` — the
+  *fork-point* content — and calls it the one provision that cannot be retrofitted. Ticket 03 said
+  the mirror row was 01's shape plus `baseRev`, `pendingRev` "and nothing else". At push time the
+  row holds *our* tip and `lastServerState` holds *theirs*; `baseRev` names the fork point without
+  storing its content. So the fork-point text had nowhere to live and **every merge in ticket 11
+  would have been silently two-way**. Fix: a fourth local-only field, `baseContent: ForkPoint | null`,
+  captured on clean→dirty and on commit-of-a-clean-push, cleared when the row goes clean. Tickets 02
+  and 03 and both feature files are amended; the wire document, the rules, the three equality tests
+  and the snapshot guard are untouched.
+- **I accept `LocalNote extends NoteDoc` (Designer's decision #5), with the guard moved.** Extending
+  means nothing structural stops the whole local row — `baseContent`, a full body copy, included —
+  reaching Firestore; the entire defence is a runtime key-set test. I take the ergonomics trade
+  (`row.doc.title` everywhere is a real cost, and TypeScript's excess-property check does fire on
+  `reconcile`'s returned literal), but a test asserting `Object.keys(toNoteDoc(x))` only proves
+  `toNoteDoc` is correct — it says nothing about a write path that never calls it, which is exactly
+  the leak `extends` makes possible. **The assertion goes on the object the gateway hands the
+  transaction, not on `toNoteDoc`'s return value**, and it is still the first test written at step 2.
+  That is mechanical rather than judgement-based, per this project's own repeated lesson.
+- **Committed, not pushed.** Badrish authorises each push to the public remote himself and gave no
+  word for this one, so the commit sits local. Operations was told explicitly that the standing
+  "logbook may ride along" allowance does not create an authorisation where none exists.
+
+**Open:**
+- **`baseContent`'s two capture points are reasoned, not model-checked** — the same class of claim
+  as 02's original snapshot rules, which were reasoned and were wrong. **My call: this goes to the
+  Mathematician at the opening of the next session, in parallel with step 1/2 — not now.** It does
+  not block step 2 (the field's *presence* is what step 2 commits to), but its answer must land
+  before the `baseContent` invariant is pinned in the contract suite, and there is no session left
+  here to consume it. Recorded on `features/conflict-sync.md` so it cannot get lost.
+- **This commit is unpushed.** Nothing is wrong with the tree; it is waiting on Badrish's word.
+- Step 1 (`domain/title.ts`) still unstarted and still needs nothing from anyone. Step 2 is now
+  genuinely open, first test named above.
+- Badrish's two physical acts, unchanged: the live Google sign-in and the Android install.
+
+**Badrish:** "Builder - please get operations to commit."
+
 ## 2026-09-01 — the key is retired; the record now says so, and it's pushed
 **Worked:** builder, operations
 

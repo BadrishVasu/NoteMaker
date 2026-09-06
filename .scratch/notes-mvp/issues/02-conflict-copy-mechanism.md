@@ -136,6 +136,14 @@ tips matter; the intermediates are irrelevant.
   This is the one provision that genuinely cannot be retrofitted: it costs one body-sized string now
   and is unrecoverable later, and without it the merge is two-way and cannot distinguish "I added
   this line" from "they deleted this line".
+  **Amendment, 2026-09-01 (`designer`): as specified, this value is not obtainable at push time.**
+  The dirty mirror row holds *our* tip and `lastServerState` holds *their* tip; `baseRev` names the
+  fork point without storing its content, so nothing in the design holds it. The mirror row
+  therefore gains a local-only `baseContent: ForkPoint | null` — see the 2026-09-01 amendment on
+  [ticket 03](03-local-store-choice.md) and `architecture.md` → **The types**. No change to the wire
+  document, the rules, the three equality tests, or the snapshot guard. The claim that its two
+  capture points always yield the content at `baseRev` is reasoned, not model-checked, and is with
+  the Mathematician.
 
 ### Interactive merge is a layer on top, never in the sync path
 

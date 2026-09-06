@@ -68,7 +68,8 @@ Firebase; nothing in `domain/` touches a browser API.
 ```
 src/
   domain/       pure TypeScript. No I/O, no React, no Firebase, no IndexedDB, no Date.now() *
-    note.ts           NoteDoc (ticket 01's shape), LocalNote = NoteDoc + baseRev + pendingRev
+    note.ts           NoteDoc (01's nine wire fields), LocalNote = NoteDoc + id + baseRev +
+                      pendingRev + baseContent, toNoteDoc/toLocalNote  — see "The types" below
     title.ts          resolveTitle / isDefaultTitle / nextUntitledN   (01 + 05)
     reconcile.ts      02's three equality tests + the conflict branch → PushAction
     applySnapshot.ts  the 14-cell table from 02's appendix; pure, takes/returns lastServerState too
@@ -413,6 +414,9 @@ reasoning and the consequences.
 
 ### Still owed by the Designer, and when it starts blocking
 
+**Delivered 2026-09-01 — see [The types](#the-types--domainnotets--designer-2026-09-01) at the end
+of this document.** The ask, kept for the record:
+
 **The literal `NoteDoc` / `LocalNote` types, field by field**, marking local-only fields (`baseRev`,
 `pendingRev`) and Conflict-copy-only fields (`conflictOf`, `conflictBase`). Step 0 does not need
 them and step 1 (`domain/title.ts`) barely does. **They block step 2**, the `store/` contract suite,
@@ -420,3 +424,278 @@ because that suite is a commitment to the row shape. That is the deadline, and i
 
 Meanwhile ticket 01's field list is now amended to the full nine-field set including `rev`,
 `conflictOf` and `conflictBase`, so the security rules and the types have one source to agree with.
+
+## The types — `domain/note.ts` — designer, 2026-09-01
+
+This is the artifact the Builder asked for at "What I need from you", and it is `src/domain/note.ts`
+verbatim: this file compiles as written, imports nothing, and is what step 2's `store/` contract
+suite commits to. Every field is annotated **W** (goes to Firestore), **L** (local-only, must never
+be serialised) or **C** (Conflict copies only).
+
+```ts
+// src/domain/note.ts
+// Pure. Imports nothing. No I/O, no React, no Firebase, no IndexedDB, no Date.now().
+// Every value that a clock or a random source would produce is passed in as an argument.
+
+// ── Identifiers ───────────────────────────────────────────────────────────────
+// Branded so that a NoteId cannot be passed where a Rev is expected. Zero runtime
+// cost; three casts at the edges. See "Decisions I had to make", #1.
+
+/** A Firestore document id under `users/{uid}/notes`, and the mirror's primary key. */
+export type NoteId = string & { readonly __brand: 'NoteId' }
+
+/** 02's opaque identity token. Compared by equality only — never ordered, never parsed. */
+export type Rev = string & { readonly __brand: 'Rev' }
+
+/** 8 chars of a `crypto.randomUUID()`, minted once per uid into `meta`, never rotated. */
+export type DeviceId = string & { readonly __brand: 'DeviceId' }
+
+export const asNoteId = (s: string): NoteId => s as NoteId
+export const asRev = (s: string): Rev => s as Rev
+export const asDeviceId = (s: string): DeviceId => s as DeviceId
+
+// ── Content ───────────────────────────────────────────────────────────────────
+
+/**
+ * The three fields that constitute a Note's *content* — the unit 02 compares for
+ * fast-forward and the unit a merge operates on. One type, used in three places:
+ * the wire field `conflictBase`, the local field `baseContent`, and `ServerState`.
+ * They are the same thing, so they are the same type.
+ */
+export interface ForkPoint {
+  title: string
+  titleIsCustom: boolean
+  body: string
+}
+
+// ── The wire document ─────────────────────────────────────────────────────────
+
+/**
+ * Exactly the nine fields of ticket 01's amended allowlist, and nothing else.
+ * The security rules use a closed allowlist, so a tenth field is a *denied write*,
+ * which surfaces as a permanently stuck Outbox rather than as an error.
+ *
+ * `id` is deliberately NOT a field: it is the document key, exactly as `userId` is
+ * the path. See `IdentifiedDoc` for the read side.
+ */
+export interface NoteDoc {
+  /** W — never empty; 01's Default title guarantees this from birth. */
+  title: string
+  /** W — false = Derived, true = Custom. One-way latch, flipped only by the user. */
+  titleIsCustom: boolean
+  /** W — markdown source. */
+  body: string
+  /** W — epoch millis, client clock, set once, immutable by rule. */
+  createdAt: number
+  /** W — epoch millis, client clock, bumped on every edit. A list sort key ONLY:
+   *  nothing in the sync mechanism reads it (02 dissolved the clock-skew debt). */
+  updatedAt: number
+  /** W — Tombstone. `null` = live, millis = in Trash. Explicit null, never absent. */
+  deletedAt: number | null
+  /** W — 02's identity token. Client-minted before the round trip; equality only. */
+  rev: Rev
+  /** W, C — the id of the surviving sibling this document is a Conflict copy of.
+   *  ABSENT (not null, not undefined) on every ordinary Note. A soft pointer: the
+   *  target may be purged or deleted-forever, and ticket 11's UI must tolerate that. */
+  conflictOf?: NoteId
+  /** W, C — the fork-point content, written at the copy's birth and never updated.
+   *  Unrecoverable if not captured here; it is what makes the merge three-way.
+   *  May legitimately be absent even when `conflictOf` is present — see #4. */
+  conflictBase?: ForkPoint
+}
+
+/** How a document travels once its key matters: reads, snapshots, writes. */
+export interface IdentifiedDoc {
+  id: NoteId
+  doc: NoteDoc
+}
+
+/** A Conflict copy, narrowed. Our writer always emits both fields; a reader must not
+ *  assume that, because the rules deliberately do not require them together. */
+export type ConflictCopyDoc = NoteDoc & { conflictOf: NoteId }
+export const isConflictCopy = (d: NoteDoc): d is ConflictCopyDoc =>
+  d.conflictOf !== undefined
+
+// ── The mirror row ────────────────────────────────────────────────────────────
+
+/**
+ * One IndexedDB row in object store `notes` of database `notemaker-<uid>`,
+ * keyPath `id`. One row, one atomic put (ticket 03). The Outbox is the subset of
+ * rows where `pendingRev !== null` — there is no second store and no `synced` flag.
+ */
+export interface LocalNote extends NoteDoc {
+  /** L — the document key, carried in the row because IndexedDB needs a keyPath. */
+  id: NoteId
+  /**
+   * L — the rev this row's content forked from. `null` for a create that has never
+   * landed. May only ever be set to a rev the listener delivered for a CLEAN row,
+   * or to a rev this device itself wrote (02 appendix, the corrected invariant).
+   */
+  baseRev: Rev | null
+  /**
+   * L — the token this row's current content will be pushed under, minted at
+   * EDIT time on every keystroke, in both Auto sync and manual modes.
+   * `pendingRev !== null` *is* dirty; it is the snapshot guard's predicate.
+   */
+  pendingRev: Rev | null
+  /**
+   * L — the content as it stood at `baseRev`. Non-null exactly while the row is
+   * dirty against a real base; `null` on every clean row and on an unlanded create.
+   * This is the field the tickets do not have and the conflict branch cannot work
+   * without — see "The one thing the tickets were missing" below.
+   */
+  baseContent: ForkPoint | null
+}
+
+/** In-memory only, owned by `sync/engine.ts`, never persisted (02 appendix, defect 1). */
+export type ServerState = ForkPoint & Pick<NoteDoc, 'rev' | 'deletedAt'>
+
+// ── The one serialisation boundary ────────────────────────────────────────────
+
+/**
+ * The ONLY way a row becomes a wire document. An explicit pick, never a spread and
+ * never a delete: a spread ships whatever local field someone adds next, and the
+ * rules deny it. Optional fields are OMITTED, never set to `undefined` — Firestore
+ * throws on `undefined`, and `ignoreUndefinedProperties` must stay OFF so that a
+ * mistake here is loud instead of a silently dropped field.
+ */
+export function toNoteDoc(n: LocalNote): NoteDoc {
+  const doc: NoteDoc = {
+    title: n.title,
+    titleIsCustom: n.titleIsCustom,
+    body: n.body,
+    createdAt: n.createdAt,
+    updatedAt: n.updatedAt,
+    deletedAt: n.deletedAt,
+    rev: n.rev,
+  }
+  if (n.conflictOf !== undefined) doc.conflictOf = n.conflictOf
+  if (n.conflictBase !== undefined) doc.conflictBase = n.conflictBase
+  return doc
+}
+
+/** The read side: a delivered document becomes a clean row. */
+export function toLocalNote(id: NoteId, doc: NoteDoc): LocalNote {
+  return { ...doc, id, baseRev: doc.rev, pendingRev: null, baseContent: null }
+}
+
+/** Content equality — 02's fast-forward test. `deletedAt` compares as a boolean,
+ *  because two deletes carry different millis and would conflict pointlessly. */
+export const sameContent = (a: ForkPoint, b: ForkPoint): boolean =>
+  a.title === b.title && a.titleIsCustom === b.titleIsCustom && a.body === b.body
+```
+
+`store/`'s `meta` object store is key-value and carries exactly three keys, typed here so the
+contract suite can assert them: `initialSyncCompletedAt: number | null` (03), `deviceId: DeviceId`
+(Builder's gap 1), and `persistGranted: boolean` (03's silent retry per open).
+
+### The one thing the tickets were missing — `baseContent`
+
+Writing the types surfaced a real hole, and it is the reason this artifact was worth doing before
+step 2 rather than during it.
+
+**02 requires a Conflict copy to carry `conflictBase`, the fork-point content — and under the row
+shape as specified, the fork-point content is not available at push time.** The row holds our *tip*
+(the user has edited it, that is why it is dirty). `lastServerState` holds *their* tip. `baseRev`
+names the fork point but nothing stores its content. So `conflictBase` would be written from
+whatever was to hand, and 02 is explicit that this field "genuinely cannot be retrofitted": get it
+wrong and every merge in ticket 11 is silently two-way forever, unable to tell "I added this line"
+from "they deleted this line".
+
+**Fix: `baseContent: ForkPoint | null` on the mirror row, local-only.** It is captured at exactly
+two moments, both of which the engine already has the value in hand for:
+
+1. **On the clean → dirty transition** (first keystroke on a clean row): `baseContent := the row's
+   content before the edit`. `baseRev` is fixed for the whole dirty episode, so one capture covers
+   every subsequent keystroke.
+2. **On commit of a clean push**, where `baseRev := pendingRev`: `baseContent := the content that
+   was in flight`, which is no longer the row's content if the user typed during the flight. Missing
+   this second capture is the subtle half; the first alone is wrong exactly in the "typed during the
+   flight" case that 02's model split `begin-push`/`commit-push` to reach.
+
+Cleared to `null` whenever the row goes clean. Cost: one body-sized string per dirty row, in
+IndexedDB only, never on the wire. **Invariant for the contract suite** — cheap to test, and it
+catches both capture points: `baseContent !== null` if and only if `pendingRev !== null &&
+baseRev !== null`.
+
+**This amends ticket 03's "the mirror row is 01's shape plus `baseRev`, `pendingRev`, and nothing
+else."** It does not touch the wire document, the rules, the three equality tests, or the snapshot
+guard predicate. It is not a second field encoding an existing fact — the fact it carries exists
+nowhere else — so it is not the `synced`-boolean mistake 03 rejected.
+
+**Owed to the Mathematician, not asserted here:** the claim that those two capture points are
+sufficient is reasoned, not model-checked, and it is the same class of claim as 02's original
+snapshot rules — which were reasoned, and were wrong. The check is cheap because the model already
+exists: add `baseContent` to the device state, assert at every conflict-branch write that the copy's
+`conflictBase` equals the content at the row's `baseRev` on the lineage. Not a step-2 blocker — the
+field's *presence* is what step 2 commits to, and its presence is not in doubt.
+
+### Decisions I had to make rather than look up
+
+Each of these was underdetermined by the tickets. Listed because these are the parts worth
+overturning now if they are wrong.
+
+1. **Branded `NoteId` / `Rev` / `DeviceId` instead of bare `string`.** This design has three
+   distinct strings in flight at once, and `copyId = <noteId>__c<deviceId>__<flightRev>` mixes all
+   three. Passing a `noteId` where a `rev` belongs typechecks perfectly as bare strings and fails as
+   a wrong equality test inside the reconcile — silent, and in the one function the whole mechanism
+   rests on. Cost: three casts at the boundaries and slightly noisier test fixtures. **Reversal is
+   three lines** (`type Rev = string`), so this is a cheap default, not a commitment.
+2. **`NoteDoc` has no `id`.** Forced, once you read 01's amendment as a *closed* allowlist: an `id`
+   field is an unknown field and the write is denied. The failure mode is the bad one — denial only
+   happens online, so it presents as a stuck Outbox behind a strip that says the notes are safe.
+   Reads carry the key alongside as `IdentifiedDoc`.
+3. **Two different absence conventions in one document, deliberately.** `deletedAt` is
+   `number | null`, always present; `conflictOf`/`conflictBase` are *absent*, never null. This is
+   not inconsistency: `deletedAt` is a live↔Trash toggle that must round-trip, and 01's rules require
+   it typed as number-or-null; the conflict fields are set at birth and never change, and 01's rules
+   say "string or absent". Writing `conflictOf: null` on an ordinary Note would be denied.
+4. **`ConflictCopyDoc` narrows on `conflictOf` alone, not on both fields.** 01 forbids the rules
+   from requiring the two together, and I found the reachable case that justifies it: a dirty row
+   with `baseRev === null` has no fork point, so a copy born from it legitimately has `conflictOf`
+   and no `conflictBase`. Ticket 11's merge UI degrades to two-way there rather than crashing.
+5. **`LocalNote extends NoteDoc`, and the leak is caught by a test rather than by the type system.**
+   The alternative — nesting the wire doc as `{ id, doc, baseRev, ... }` — makes leakage structurally
+   impossible but turns every field access into `row.doc.title` across the entire app. I took
+   ergonomics, because TypeScript's excess-property check does fire on the object literal that
+   `reconcile` returns, and because the runtime guard is one assertion: **`Object.keys(toNoteDoc(x))`
+   equals exactly the expected key set** for a fully-populated conflict copy and for an ordinary
+   Note. Named for the Builder as a required step-2 test; it is the guard, and it must exist before
+   `toNoteDoc` does.
+6. **`ForkPoint` is one type used three ways** rather than three structurally-identical interfaces.
+   `conflictBase`, `baseContent` and the content half of `ServerState` are the same three fields
+   because they are the same concept, and giving them one name is what makes `sameContent` usable
+   against all of them. `ServerState` derives `rev`/`deletedAt` by `Pick` so it cannot drift from
+   `NoteDoc`.
+7. **No `sendRequested` field on the row.** 02's manual-send amendment contemplated "a client-only
+   'send requested since last dirty' bit"; the Builder's later trigger policy made `Sync Now` a
+   *global* wake source rather than a per-Note affordance, which removes the need entirely. If a
+   per-Note send ever returns, it belongs in engine memory, not in the persisted row. Recording this
+   so the two documents are not read as disagreeing.
+8. **`toLocalNote` sets `baseRev := doc.rev`.** Only correct for an insert into an absent row
+   (`applySnapshot` cell 2). It is not a general-purpose constructor and the cells that adopt into an
+   existing row must not route through it.
+
+### tsconfig requirements these types assume
+
+Two, both non-default, both load-bearing rather than stylistic:
+
+- **`exactOptionalPropertyTypes: true`.** Without it, `conflictOf?: NoteId` accepts an explicit
+  `undefined`, and an `undefined` reaching Firestore throws at write time — inside a transaction,
+  where it presents as a failed push.
+- **`strict: true`**, for `strictNullChecks` specifically: `baseRev`, `pendingRev` and `baseContent`
+  are all `T | null` and the entire mechanism is a set of null discriminations.
+
+And one Firebase setting, stated here because it is the mirror image of the first: **leave
+`ignoreUndefinedProperties` off.** Turning it on converts a bug in `toNoteDoc` from a thrown error
+into a silently dropped field.
+
+### Testable seams this creates, in step-2 order
+
+1. `toNoteDoc` key-set assertion, both shapes — decision #5's guard. **Write this first.**
+2. The `baseContent` invariant (`baseContent !== null ⟺ pendingRev !== null && baseRev !== null`),
+   asserted in the `NoteStore` contract suite so it holds against the fake and against `idb`.
+3. Round-trip: `toLocalNote(id, doc)` then `toNoteDoc` returns a document deep-equal to `doc`.
+4. `sameContent` ignores `updatedAt`, `createdAt`, `rev` and `deletedAt`'s millis — it is 02's
+   fast-forward test and this is where its `deletedAt`-as-boolean rule gets pinned.
+5. `isConflictCopy` is true for `conflictOf` without `conflictBase` (decision #4's reachable case).

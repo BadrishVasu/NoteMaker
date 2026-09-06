@@ -248,3 +248,34 @@ then a `serverSeq` watermark if the SDK cache is somehow unacceptable.
 Retrofit cost, checked: adding `serverSeq` later is cheap. Existing documents would hold null, and
 the migration is a single full re-read — which is exactly today's behaviour. So deferring this
 carries no trap.
+
+## Amendment, 2026-09-01 (`designer`) — the row is not "`baseRev`, `pendingRev`, and nothing else"
+
+The literal types are now written, in `architecture.md` → **The types**, and that is the binding
+statement of the row shape. Two corrections to the wording above.
+
+**The row carries `id`.** Trivial, but the object store has a keyPath and 01's "no `userId`, it is
+the path" reasoning does not extend to a key-value store that has no path. `id` is local-only: it is
+the Firestore *document key*, never a field inside the document, and 01's closed allowlist would
+deny a write that carried it.
+
+**The row carries a fourth local field, `baseContent: ForkPoint | null`** — the `title`,
+`titleIsCustom` and `body` as they stood at `baseRev`. This is forced by 02, not preference. 02
+requires a Conflict copy to carry `conflictBase`, the *fork-point* content, and calls it the one
+provision that cannot be retrofitted. At push time the mirror row holds our tip (the edit is what
+made it dirty) and `lastServerState` holds the other device's tip; `baseRev` names the fork point
+but nothing anywhere stores its content. Without this field `conflictBase` cannot be written
+correctly and every merge in ticket 11 is silently two-way.
+
+Captured at exactly two moments: the clean → dirty transition, and the commit of a clean push (where
+`baseRev` advances to the rev we just landed, while the row may already hold text typed during the
+flight). Cleared to `null` when the row goes clean. Invariant, asserted in the contract suite:
+`baseContent !== null` **iff** `pendingRev !== null && baseRev !== null`.
+
+**This is not the `synced`-boolean mistake this ticket rejected.** That flag was a second encoding
+of a fact `pendingRev` already carried; this field carries a fact no other field carries. Cost is
+one body-sized string per *dirty* row, in IndexedDB only, never on the wire.
+
+The sufficiency of the two capture points is reasoned, not model-checked, and is with the
+Mathematician. The field's presence is not in doubt, so the contract suite is not blocked on that
+answer.

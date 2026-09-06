@@ -151,6 +151,52 @@ trap; and if it is ever adopted, the "max(serverSeq) over the delivered set is a
 claim goes to the Mathematician first. It is the same *class* of claim as 02's snapshot rules —
 plausible from reasoning, and those turned out to be wrong under model-checking.
 
+### 2026-09-01 — the types, and the hole they exposed
+
+Owed for five sessions, written today. `architecture.md` → "The types". The lesson I want to keep is
+about the *delay*, not the content: I treated this as transcription — nine fields already settled by
+01, two local fields already settled by 03 — which is exactly why it kept losing to more interesting
+work. It was not transcription. Writing the actual TypeScript found a live hole in the mechanism
+within twenty minutes. **When an artifact feels like it is only transcription, that is the argument
+for writing it sooner, not for deferring it.**
+
+**The hole: `conflictBase` is unobtainable at push time under the row shape as specified.** 02 wants
+the copy to carry the *fork point*. The dirty row holds our tip (the edit is why it is dirty),
+`lastServerState` holds their tip, and `baseRev` names the fork without storing its content. So the
+one field 02 says cannot be retrofitted would have been written from whatever was to hand, and every
+merge in ticket 11 is quietly two-way forever. Nobody would have noticed until a user merged.
+
+Fix is a fourth local field, `baseContent: ForkPoint | null`, captured at **two** points. The first
+(clean→dirty) is obvious. The second — commit of a clean push, where the base advances to the rev we
+just landed while the row already holds text typed during the flight — is the one I nearly missed,
+and it is precisely the "typed during the flight" case 02 split `begin-push`/`commit-push` to reach.
+If someone later "simplifies" this to a single capture, that is the case that breaks.
+
+Sent the sufficiency claim to the Mathematician rather than asserting it. Same class as 02's
+original snapshot rules: reasoned, plausible, and wrong when checked. I am not going to relearn that.
+
+**Decisions, with the ones I'd expect pushback on first:**
+- Branded `NoteId`/`Rev`/`DeviceId`. Slight friction in fixtures; the alternative is a `noteId`
+  passed where a `rev` belongs typechecking cleanly and failing as a wrong equality *inside the
+  reconcile*. Reversal is three lines, so it is a cheap default, not a stake in the ground.
+- `LocalNote extends NoteDoc` — I took ergonomics over structural safety here, knowingly. A
+  `LocalNote` is assignable to `NoteDoc`, so nothing at the type level stops the whole row going to
+  Firestore. The guard is a runtime key-set assertion on `toNoteDoc`, and I named it as the test the
+  Builder writes *before* `toNoteDoc` exists. If that test is skipped, this decision is wrong.
+- Two absence conventions in one document (`deletedAt: null` present, conflict fields absent). Looks
+  like sloppiness, is forced: 01's rules type `deletedAt` as number-or-null and the conflict fields
+  as string-or-**absent**, and the allowlist is closed, so `conflictOf: null` is a denied write.
+
+**Dead end, ruled out:** nesting the wire doc inside the row (`{ id, doc, baseRev, ... }`) to make
+serialisation leakage structurally impossible. It works, and it costs `row.doc.title` at every
+access site across the entire app — a permanent ergonomic tax on every module to prevent one bug
+that one test catches. Don't reopen it unless that test turns out not to be writable.
+
+**Also noticed:** 01's rule "do not require `conflictOf` and `conflictBase` together" was written as
+a general principle about rules not being schema validators. There is a *reachable* case that makes
+it load-bearing — a dirty row with `baseRev === null` has no fork point, so its copy legitimately
+has one field and not the other. Good rule, better reason.
+
 ### Testable seams I named for the Builder and for ticket 09
 
 `NoteStore` port (contract suite run against a fake and against `idb` — this is how 09 gets a second

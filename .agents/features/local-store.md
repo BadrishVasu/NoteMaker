@@ -12,6 +12,8 @@ network transport around it, not a store the app reads.
 
 ## State
 - [x] Architecture decided — ticket 03 resolved, 2026-08-25
+- [x] **Row shape fixed as literal types** — `architecture.md`, "The types", 2026-09-01. This was
+      what blocked the contract suite; it is unblocked.
 - [ ] `NoteStore` contract test suite (fake + `idb`)
 - [ ] `applySnapshot` / `reconcile` pure units
 - [ ] Mirror boot, `initialSyncCompletedAt`, `navigator.storage.persist()`
@@ -45,6 +47,18 @@ Full reasoning lives on ticket 03; the constraints that forced each, in one line
 - A server-assigned value can never be 02's identity token: the push must know the token before the
   round trip or a retry after a lost response can't recognise its own landed write — designer —
   2026-08-26
+
+- **The row is `NoteDoc` + `id` + `baseRev` + `pendingRev` + `baseContent`** — amends 03's "and
+  nothing else". `baseContent` (the content at `baseRev`) is forced: 02 requires a Conflict copy to
+  carry the fork-point content, and at push time the row holds our tip and `lastServerState` holds
+  theirs, so the fork point exists nowhere. Not the `synced`-boolean mistake — it carries a fact no
+  other field carries. Local-only, never serialised — designer — 2026-09-01
+- **`NoteDoc` carries no `id`**, and `conflictOf`/`conflictBase` are absent rather than null —
+  forced by 01's *closed* rules allowlist: an extra field or an explicit null is a denied write, and
+  a denied write shows up as a stuck Outbox, not an error — designer — 2026-09-01
+- Branded `NoteId`/`Rev`/`DeviceId` over bare `string` — three same-shaped strings meet in the copy
+  id, and a mix-up would typecheck and fail as a wrong equality inside the reconcile. Reversal is
+  three lines — designer — 2026-09-01
 
 ## Open questions
 - Growth story past ~2,000 Notes / ~20 MB — deferred to the map's "Not yet specified"

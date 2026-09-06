@@ -1,5 +1,57 @@
 # Builder's notebook — NoteMaker
 
+## 2026-09-06 — the artifact I was owed found a bug in the spec I'd already read twice
+
+The Designer delivered the literal types. The headline isn't the types — it's that **writing them
+out found a hole that reading the tickets did not**. I read 01, 02 and 03 in full on 2026-08-25 and
+listed seven gaps out of them. `conflictBase` having nowhere to come from was not one of them, and
+it was sitting in plain sight across two documents: 02 says a Conflict copy must carry the
+fork-point content, 03 says the row is `baseRev`, `pendingRev` "and nothing else". Each reads fine
+alone. That is the *third* time on this project a contradiction has survived because it was split
+across two documents that were each internally consistent (ticket 04 vs 10 on the config values;
+ticket 10 vs the pushed tip on the key). Same disease.
+
+**The generalisation worth keeping: prose specifications don't have to typecheck, so writing the
+types is itself a check, and it's a cheaper one than the code that would have found this at step 6.**
+The failure would have surfaced as merges that "work" — no error, no stuck Outbox, just a
+permanently two-way merge that can't tell "I added this line" from "they deleted this line". Late,
+silent, and unrecoverable because the value was never captured. I should treat "turn the prose into
+literal types" as a *verification step* I schedule deliberately, not as clerical work that unblocks
+a build step.
+
+### Where I moved the Designer's guard, and why the original wasn't enough
+
+Decision #5 — `LocalNote extends NoteDoc` — takes ergonomics over structural safety and pays for it
+with one runtime test. I accept the trade; nesting turns every access into `row.doc.title` forever,
+and that's a real tax on every file in the app.
+
+But the proposed test asserts `Object.keys(toNoteDoc(x))` matches the expected key set. **That test
+can only fail if `toNoteDoc` is wrong.** The leak `extends` actually creates is a write path that
+never calls `toNoteDoc` at all — someone hands the transaction a `LocalNote` directly, it structurally
+satisfies `NoteDoc`, it typechecks, and `baseContent` (a full body copy) goes over the wire. The test
+as named passes cheerfully through that.
+
+So the assertion moves onto **the object the gateway hands the transaction**. Same cost, catches the
+class instead of the instance. This is the same move as the ESLint import boundary vs ticket 02's
+name list: guard the choke point, not the well-behaved function. And it's my own mechanical-beats-
+correct-sounding rule applied to my own peer's design rather than to a document.
+
+Still first test at step 2. That's on me now.
+
+### The Mathematician question — deferred deliberately, and the reason is not "it's small"
+
+`baseContent`'s two capture points hit two of my own mandatory triggers: expensive to unwind (the
+value is unrecoverable if captured wrong) and surfaces late (as a degraded merge, at ticket 11).
+So it goes to him — the only question was when. I sent it to *next* session's opening rather than
+now, because there is no step-2 work in this session to consume the answer, and an answer that
+arrives into a context nobody is holding is an answer that gets re-derived. It's on the feature file
+and in the journal so the timing is a decision rather than a lapse. If I find myself at step 2's
+invariant test without having sent it, that's the failure, not the deferral.
+
+Worth noting the Designer flagged this itself rather than asserting it. Four decisions offered for
+challenge, one referred up. That's the behaviour that makes the artifact trustworthy — the
+alternative is a document where I can't tell reasoned-and-verified from reasoned-and-hoped.
+
 ## 2026-09-01 (later) — closing a question is a write, and it has the same failure modes
 
 Badrish answered the rotation question: rotated **and retired**. Short session, one commit, but two

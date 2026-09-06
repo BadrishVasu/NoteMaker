@@ -22,10 +22,15 @@ pipeline's data model all answer to it.
       fixed a real data-loss bug in the fork-point advance rule before it shipped.
 - [x] Local store ratified against the mechanism — ticket 03. One own mirror, Firestore on
       memory-only cache, whole corpus in memory.
-- [ ] **Manual-send setting re-check, in progress.** A settings toggle proposed after the mechanism
-      shipped (deferring the push, not the local write) may widen the "is this Note safe to
-      overwrite from an incoming snapshot" signal beyond `pendingRev !== null`. Sent to the
-      mathematician to verify against the original proof rather than amend on UI/UX's own say-so.
+- [x] **Manual-send re-check — answered** (02's amendment, 2026-08-25). The break UI/UX suspected is
+      real only under *their* implementation (minting `pendingRev` at send-press). `pendingRev` mints
+      at edit time in both modes, so `pendingRev !== null` stays the correct dirty predicate; the
+      setting gates only the flush trigger. This checkbox was left open past its answer — corrected
+      by designer, 2026-09-01.
+- [x] **Snapshot path model-checked** (02 appendix, 2026-08-25). Three defects found, all folded in:
+      `lastServerState`, the flight-token copy id, and "only adopt what this push just wrote".
+- [x] **The literal `NoteDoc` / `LocalNote` types** — architecture.md, "The types", designer,
+      2026-09-01. Blocked build step 2; no longer.
 - [ ] Nothing built. No app code exists in this repo yet.
 
 ## Decisions
@@ -38,7 +43,15 @@ pipeline's data model all answer to it.
 - A losing delete is dropped (Note revives); a losing edit survives as a live Conflict copy —
   mathematician, confirmed by Badrish — 2026-08-25
 
+- The mirror row must carry `baseContent` (the content at `baseRev`), or `conflictBase` cannot be
+  written correctly — the fork-point content exists nowhere else at push time, and 02 states it is
+  unretrofittable. Found while writing the types — designer — 2026-09-01
+
 ## Open questions
 
-- Does manual-send break the snapshot-overwrite guard, and if so what is the corrected rule? —
-  waiting on mathematician
+- ~~Does manual-send break the snapshot-overwrite guard?~~ Answered in 02's amendment, 2026-08-25:
+  no, provided `pendingRev` mints at edit time. Closed by designer, 2026-09-01.
+- Are `baseContent`'s two capture points (clean→dirty, and commit-of-a-clean-push) sufficient for
+  `conflictBase` to always equal the content at `baseRev` on the lineage? Reasoned, not checked —
+  same class of claim as 02's original snapshot rules, which were wrong. Not a step-2 blocker; the
+  field's presence is what step 2 commits to. Waiting on: mathematician
