@@ -2,6 +2,67 @@
 
 Newest entry first. Append only.
 
+## 2026-09-06 (later) — first application logic in the repo: steps 1 and 2 built
+**Worked:** builder, mathematician
+
+**Moved:**
+- **`src/domain/note.ts` is a real file now.** Correcting the entry below, which said it "exists as
+  literal, compiling types": **it did not exist.** The Designer's artifact was a fenced code block
+  inside `architecture.md` and `0e32dce` landed it there, not in `src/`. Badrish caught it. It is
+  transcribed **verbatim and unaltered**, and it typechecks under the two non-default flags it
+  assumes (`strict`, `exactOptionalPropertyTypes`) — both were already set.
+- **Build step 1 is done: `src/domain/title.ts`**, red first, 41 tests. Ticket 01's three resolution
+  branches, the one-way `titleIsCustom` latch, and `Untitled Note N` allocated as one greater than
+  the highest in the mirror. Pure — no clock, no I/O, `N` passed in. Three underdetermined points
+  taken as mine and written onto the new `features/note-model.md`: a marker-only body line is
+  skipped rather than accepted-then-trimmed (the alternative can produce an empty title, which the
+  security rule forbids); a Custom title is trimmed before the emptiness test; and in the Default
+  branch an `Untitled Note N` already on the row is kept, which is what "existing Notes are never
+  renumbered" actually means.
+- **Build step 2 is done: the `NoteStore` contract suite**, 65 cases run against `memoryNoteStore`
+  and `idbNoteStore`, plus both implementations. `fake-indexeddb` runs the real `idb` path under
+  vitest; the emulator keeps its ticket-03 scope. **The `baseContent` invariant is enforced, not
+  asserted** — `assertRowInvariant` guards every write in both stores, so the suite proves the
+  stores enforce it rather than proving the test built valid rows. Same reasoning as moving the
+  `extends` guard onto the gateway's object.
+- **The suite went green on its first run, so it was mutation-tested rather than believed.** Eight
+  deliberate breakages of each store; seven caught, **one not** — the copy-not-alias test covered
+  `get` and not `getAll`, which is the read the corpus is built from. That test is new and exists
+  because the mutation found the hole. (Two mutations also silently failed to apply on a CRLF/LF
+  mismatch, which is the flattering direction; worth knowing a mutation harness needs to prove the
+  mutation landed.)
+- **Badrish's correction carried, and it was mine to make.** The `LocalNote extends NoteDoc` guard
+  cannot be "the first test at step 2" — it belongs on the object the gateway hands the transaction,
+  and no gateway exists until step 4. It is written onto `features/sync-engine.md` at step 4, three
+  steps early, so it survives. The reasoning that moved it off `toNoteDoc` is unchanged. The old
+  claim in `notes/builder.md` is annotated in place rather than deleted.
+- **`features/note-model.md` created** — ticket 01's model had no feature file, so step 1 had
+  nowhere to be recorded.
+- **Two commits, unpushed.** `3d705a2` and `9e39b82`. No word from Badrish on these specific pushes.
+
+**Open:**
+- **The Mathematician is running the `baseContent` capture-point check**, sent at the top of this
+  session as planned. Brief widened on three counts: `snapshot-delivered` as an event (an
+  `applySnapshot` cell that moves `baseRev` without moving `baseContent` is the shape at risk); is
+  the unlanded create the only reachable absent-`conflictBase` case; and is the biconditional
+  `baseContent !== null ⟺ pendingRev !== null && baseRev !== null` implied by his result or stronger
+  than what holds. **That last one now has teeth**: step 2 enforces it on every write, so a
+  too-strong predicate rejects legitimate rows. One function to change; nothing consumes the store.
+- **One thing in the Designer's types that I think is wrong, raised out loud and not altered:**
+  `sameContent`'s doc comment says `deletedAt` compares as a boolean, but its parameter is
+  `ForkPoint`, which has no `deletedAt`. So `architecture.md`'s testable seam #4 cannot be pinned
+  there — the deletedAt-as-boolean rule has to live at the caller, in `domain/reconcile` against
+  `ServerState`, at step 3. The code is fine; the comment and the test plan are not. On
+  `features/note-model.md`, waiting on the Designer.
+- Next is **build step 3** — `domain/reconcile` + `applySnapshot` + `conflictCopy`, with 02's two
+  model-checked traps as named regression tests. Unblocked, and the store seam is now real beneath it.
+- Badrish's two physical acts, unchanged: the live Google sign-in and the Android install.
+
+**Badrish:** the placement correction above ("the assertion belongs on the object the gateway hands
+the transaction — and no gateway exists until step 4, so it cannot be written at step 2"), and that
+`src/domain/note.ts` was not in the repo at all. Also: "Nothing reaches the public remote without my
+explicit word on that specific push."
+
 ## 2026-09-06 — the types landed, and writing them found a hole in the spec
 **Worked:** designer, builder, operations
 

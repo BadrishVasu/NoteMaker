@@ -1,5 +1,82 @@
 # Builder's notebook — NoteMaker
 
+## 2026-09-06 (later) — a document said a file existed, and I believed my own journal
+
+Three things worth keeping from the first session that actually produced application logic.
+
+### The correction I have to carry, and the one I nearly repeated
+
+Badrish corrected the entry below: the `extends` guard is "still the first test written at step 2"
+is **wrong**. The assertion goes on the object the gateway hands the transaction, and no gateway
+exists until step 4 — so there was nothing at step 2 for it to sit on. My reasoning about *where*
+the guard belongs was right and is unchanged; I then wrote down a *when* that my own reasoning had
+already ruled out, and did not notice because the two sentences were in the same paragraph. It is
+now on `features/sync-engine.md` at step 4, three steps early, so it survives.
+
+The generalisation: **when I move a decision, I have to re-derive everything the old placement
+implied, not just restate the new one.** Moving the guard off `toNoteDoc` also moved it off step 2,
+and I carried the schedule across unchanged because it was attached to the sentence rather than to
+the reasoning.
+
+The bigger one is worse. My own journal entry said **"`src/domain/note.ts` exists as literal,
+compiling types."** It did not exist. The Designer's artifact was a fenced code block inside
+`architecture.md`, the commit `0e32dce` was titled "Land the literal NoteDoc/LocalNote types", and
+I wrote the entry from the artifact rather than from the tree. Badrish caught it, not me — and I
+would have opened step 2 next session against a file that isn't there.
+
+**Nothing in the logbook may assert that a file exists without the assertion having been checked
+against the tree.** This is the same disease as the ticket-10 line that went stale when the push
+made it wrong, except faster: it was false the moment I wrote it. `git status` is one command and
+it is the difference between a record and a story about a record. A commit *title* is not evidence
+of what the commit contains.
+
+### The suite went green on the first run, so I attacked it
+
+Step 2's contract suite passed 64/64 immediately. On this project that is a warning, not a result —
+it is the fifth variant of the lesson that a guard matching nothing and a clean codebase look
+identical. So I mutation-tested it: eight deliberate breakages of each store (drop the invariant
+guard, drop the clone on `get` / on `getAll` / on `put`, drop rollback of notes, of meta, of both).
+
+**Seven were caught. One was not:** removing the clone from `getAll` changed nothing, because my
+aliasing test only used `get`. And `getAll` is the read the *corpus* is built from — the one whose
+rows the entire UI holds and can mutate. The exact path that matters was the untested one, and the
+test I *had* written was the one that felt representative.
+
+New thing here, beyond "test in both directions": **a negative control tests one path, not one
+property.** I'd been treating "I proved copies-not-aliases" as a property-level result when it was
+a single-call-site result. When a store has four read paths, the mutation has to be tried on each.
+Cheap: the whole exercise was one scripted loop and about four minutes.
+
+Second-order: the two mutations that "PATTERN NOT FOUND" on my first attempt were a CRLF/LF
+mismatch — PowerShell `.Replace` against files written with `\n`. That failure mode is *silent in
+the direction that flatters me*: a mutation that never applies reports as a pass. I only caught it
+because two of eight reported not-found while others worked. If all eight had silently no-op'd I'd
+have recorded "suite verified" for an exercise that ran nothing. **Same shape as the negative
+control that needs a predicted observation — a mutation harness needs to prove the mutation landed,
+not just that the run finished.**
+
+### Enforce the invariant, don't assert it
+
+`baseContent !== null ⟺ pendingRev !== null && baseRev !== null` could have been a test that builds
+rows and checks them. That proves the test correct. I put it in `assertRowInvariant`, called on
+every write in both stores, so no path can put a violating row on disk — and the suite then proves
+*the stores* enforce it. **Identical reasoning to moving the `extends` guard onto the gateway's
+object**, which is a small sign the rule is real rather than a one-off: guard the choke point, and
+let the suite prove the choke point is closed.
+
+The cost is that a wrong predicate now *rejects legitimate rows* rather than merely failing to
+catch bad ones, which is why it is on two feature files as pending the Mathematician. Contained —
+one function, nothing consumes the store yet.
+
+### On not spawning anyone
+
+Steps 1 and 2 are ~400 lines of pure logic and one port with two implementations. A build team here
+would have cost coordination and bought nothing, exactly as I wrote at step 0. The one agent that
+earned its spawn was the Mathematician, and only because the question hits two of my own mandatory
+triggers (unrecoverable if captured wrong; surfaces late, at ticket 11). Sent in parallel at the
+top of the session, per my own deferral note — the point of the deferral was that the answer land
+in a session holding the work, and it did.
+
 ## 2026-09-06 — the artifact I was owed found a bug in the spec I'd already read twice
 
 The Designer delivered the literal types. The headline isn't the types — it's that **writing them
@@ -37,6 +114,11 @@ name list: guard the choke point, not the well-behaved function. And it's my own
 correct-sounding rule applied to my own peer's design rather than to a document.
 
 Still first test at step 2. That's on me now.
+
+> **Corrected 2026-09-06 (Badrish).** The placement above is wrong: the assertion belongs on the
+> object the gateway hands the transaction, and no gateway exists until **step 4** (`fakeGateway`),
+> so it cannot be the first test at step 2. The reasoning that moved it off `toNoteDoc` is
+> unchanged. Now recorded on `features/sync-engine.md` at step 4. See the newer entry at the top.
 
 ### The Mathematician question — deferred deliberately, and the reason is not "it's small"
 

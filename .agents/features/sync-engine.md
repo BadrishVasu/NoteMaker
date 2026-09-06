@@ -27,6 +27,8 @@ one.
 - [ ] The second half of 09's guard: an intra-file assertion that `runTransaction` is the only write
       path *inside* `firestoreGateway.ts`. The boundary stops the call being written elsewhere, not
       being written wrongly there. Lands with the gateway at step 5.
+- [ ] **The `LocalNote extends NoteDoc` leak guard — lands HERE, at step 4, with `fakeGateway`.**
+      Written onto this file three steps early so it survives. Detail under Decisions.
 
 ## Decisions
 - Import boundary replaces 02's name list: only `sync/firestoreGateway.ts` may import
@@ -51,9 +53,23 @@ one.
 - `initializeFirestore` lives in `sync/firestoreGateway.ts`, not `platform/firebase.ts`, so the
   import boundary needs **no exceptions** — builder — 2026-08-26
 
+- **The `LocalNote extends NoteDoc` leak guard belongs at step 4, on the object the gateway hands
+  the transaction.** Designer decision #5 takes ergonomics over structural safety (`extends` means
+  nothing stops a whole mirror row — `baseContent`, a full body copy — reaching Firestore) and pays
+  for it with one runtime assertion. His proposed form, `Object.keys(toNoteDoc(x))` equals the
+  expected key set, **can only fail if `toNoteDoc` is wrong**; the leak `extends` actually creates
+  is a write path that never calls `toNoteDoc`, structurally satisfies `NoteDoc`, and typechecks.
+  So the assertion goes on the object handed to the transaction. That reasoning is unchanged.
+
+  **Correction to the placement, and it is Badrish's, 2026-09-06:** the 2026-09-06 journal entry
+  said this was "still the first test written at step 2." That is wrong — no gateway exists until
+  step 4 (`fakeGateway`), so there is nothing at step 2 for the assertion to sit on. Step 2 shipped
+  without it, correctly. Two key-set assertions, one for an ordinary Note and one for a fully
+  populated Conflict copy — builder — 2026-09-06
+
 ## Open questions
-- None blocking the engine's own work. Two dependencies elsewhere:
-  - The literal `NoteDoc` / `LocalNote` types — waiting on designer, blocks build step 2.
+- None blocking the engine's own work. One dependency elsewhere:
+  - ~~The literal `NoteDoc` / `LocalNote` types~~ — landed as `src/domain/note.ts`, 2026-09-06.
   - Ticket 13's purge must respect appendix cell 7 (dirty row + absent server doc = no-op). Noted on
     13; not this feature's to solve.
 

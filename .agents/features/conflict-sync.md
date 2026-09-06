@@ -54,4 +54,11 @@ pipeline's data model all answer to it.
 - Are `baseContent`'s two capture points (clean→dirty, and commit-of-a-clean-push) sufficient for
   `conflictBase` to always equal the content at `baseRev` on the lineage? Reasoned, not checked —
   same class of claim as 02's original snapshot rules, which were wrong. Not a step-2 blocker; the
-  field's presence is what step 2 commits to. Waiting on: mathematician
+  field's presence is what step 2 commits to. **Sent to the mathematician 2026-09-06**, with three
+  additions to the brief: run it with `snapshot-delivered` as an event (the two capture points are
+  stated only in terms of edit and commit-push, so an `applySnapshot` cell that moves `baseRev`
+  without moving `baseContent` is the shape at risk); confirm the unlanded create is the *only*
+  reachable absent-`conflictBase` case; and say whether the biconditional
+  `baseContent !== null ⟺ pendingRev !== null && baseRev !== null` is implied by his result or is
+  stronger than what holds — build step 2 now **enforces** it on every store write, so a predicate
+  that is too strong rejects legitimate rows. Waiting on: mathematician
