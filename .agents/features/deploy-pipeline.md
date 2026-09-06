@@ -10,7 +10,10 @@ The path from a commit to a live, installable app on `https://note-maker-f41.pag
 build step 0 in `architecture.md` and it is the first thing in the project that produces something a
 person can actually open. It carries three proofs and no features: the pipeline builds and deploys,
 a real Google sign-in returns a real uid on the real host across ticket 04's origin split, and the
-app installs to an Android homescreen.
+app can be added to an Android homescreen from Chrome. **No installable package is ever produced** —
+NoteMaker is a PWA and the map rules out a Play Store app (`map.md`, "PWA, no Play Store", and Out of
+scope: "Native Play Store app"). There is no `.apk` to build, sign, or distribute; "install" here is
+Chrome's own Add to Home screen acting on the manifest already served by the live host.
 
 ## State
 - [x] Firebase project, Cloudflare Pages hostname, auth provider and authorised domains provisioned
@@ -88,13 +91,24 @@ app installs to an Android homescreen.
       standalone`, `start_url`/`scope` `/`, and all three icons (192, 512, 512-maskable) return 200
       as real `image/png`. Secure context. Icons remain placeholder art — real ones are UI/UX's at
       step 6.
-- [ ] **Sign-in completed end to end on the deployed host** — the only step left, and it is
-      Badrish's: it needs a real Google account, which no agent may authenticate. Every precondition
-      it depends on is verified above, so what remains is one click. An agent attempt returned
-      `auth/popup-blocked` from the automation browser — an artifact of that browser, not the deploy.
-      Worth noting the app handled it correctly, rendering the friendly message plus the error code.
-- [ ] **Installed to an Android homescreen** — Badrish's, same reason: needs a real device. Every
-      installability criterion is met above.
+- [x] **Sign-in completed end to end on the deployed host** — **Badrish, 2026-09-06: done.** Recorded
+      with its provenance, the same way the key rotation was on 2026-09-01: this is *Badrish's
+      assertion of a click he performed*, not an agent observation. **No agent has seen the uid
+      render**, and none can — signing in needs a real Google account, which no agent may
+      authenticate. What agents did verify is every precondition (all the boxes above), so the claim
+      is consistent with everything measurable from here. An earlier agent attempt returned
+      `auth/popup-blocked` from the automation browser — an artifact of that browser, not the deploy;
+      worth keeping because the app handled it correctly, rendering the friendly message plus the
+      error code.
+- [ ] **Added to an Android homescreen from Chrome** — Badrish's, because it needs a real device.
+      **This is not a packaging step and produces no artifact:** the act is opening
+      `https://note-maker-f41.pages.dev/` in Chrome on Android and accepting the install prompt, or
+      ⋮ → *Add to Home screen*. Nothing is built, downloaded, signed or sideloaded, and there is no
+      `.apk` — see "What it is" above. It is doable today; every installability criterion is verified
+      above. Two later tickets genuinely need the installed context rather than a browser tab —
+      ticket 03's `navigator.storage.persist()` (a plain tab is often denied where an installed app
+      is granted) and ticket 12's back gesture — so this is worth doing before those. The icon will
+      be placeholder art until UI/UX's step 6; that is expected, not a bug.
 - [ ] **The `prompt` update bar has not been exercised**, and could not be by this deploy. A waiting
       service worker only exists once a *second* build is deployed, so the update-available bar first
       becomes testable on the next deploy. Flagged so it is checked then rather than assumed.
@@ -130,6 +144,7 @@ app installs to an Android homescreen.
   ticket 04.
 
 ## Open questions
-None open as of 2026-09-01. Note this does not mean the feature is finished: three items in `State`
-are still unchecked — Badrish's end-to-end sign-in, the Android install, and exercising the `prompt`
-update bar on the next deploy. Those are pending *actions*, not unanswered questions.
+None open as of 2026-09-06. Note this does not mean the feature is finished: two items in `State`
+are still unchecked — adding the app to the Android homescreen, and exercising the `prompt` update
+bar on the next deploy. Those are pending *actions*, not unanswered questions. (The third,
+end-to-end sign-in, closed 2026-09-06 on Badrish's word.)

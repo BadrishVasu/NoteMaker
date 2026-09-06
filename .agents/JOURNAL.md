@@ -2,6 +2,47 @@
 
 Newest entry first. Append only.
 
+## 2026-09-06 (fourth) — the live sign-in is done; the record said otherwise, and the Android wording caused it
+**Worked:** builder
+
+**Moved:**
+- **Sign-in on the deployed host is closed — Badrish, 2026-09-06.** `deploy-pipeline.md` had it
+  unchecked as "the only step left" and three journal `Open:` blocks carried it forward, so the repo
+  was asserting something false. Closed **with provenance**, the same shape as the key rotation on
+  2026-09-01: this is Badrish's assertion of a click he performed, **no agent has seen the uid
+  render**, and none can. What agents did verify is every precondition, so the claim is consistent
+  with everything measurable from here.
+- **The Android box's wording is the actual defect and it is fixed at the source.** "Installed to an
+  Android homescreen" reads as a *packaging* step to anyone not already holding the PWA decision —
+  Badrish read it that way and asked for an `.apk`. Both the box and the feature's "What it is" now
+  say what the act physically is (Chrome on Android → the live URL → install prompt, or ⋮ → Add to
+  Home screen) and state outright that **no artifact is produced**, citing `map.md`'s "PWA, no Play
+  Store" and its out-of-scope "Native Play Store app". Also recorded why it is worth doing before
+  tickets 03 and 12, which need the installed context rather than a tab, and that the placeholder
+  icon until step 6 is expected rather than a bug.
+- **Swept for other things the success silently falsified** (my own 2026-09-01 lesson: grep for the
+  claim, don't recall the file). One real hit: ticket 10's "Steps only Badrish can perform" list had
+  no status stamp, so a reader would re-run three completed dashboard actions. Stamped, with the
+  no-`.apk` fact repeated there and a pointer to the feature file as live state. The remaining hits
+  are dated journal/notebook entries and the Overseer's original flag on ticket 10 — historical by
+  construction, correctly left alone.
+- **Claude answered Badrish's `.apk` question directly rather than routing it.** I checked it against
+  the repo: it is correct on every point — `map.md:36`, the out-of-scope entry, ticket 03's
+  `persist()` grant in an installed app, ticket 12's back gesture, and the placeholder icons. Nothing
+  to correct in front of Badrish.
+- Documentation only; no code touched, no tests moved. One commit, unpushed.
+
+**Open:**
+- **Two physical acts left on step 0, down from three:** adding the app to an Android homescreen, and
+  exercising the `prompt` update bar (which only becomes testable on the *next* deploy).
+- Step 3 unchanged and next: `domain/reconcile`, whose tests need a fixture that remembers content
+  per rev — see the entry below.
+- **Four commits are local and stay local** — `3d705a2`, `9e39b82`, `db90efa`, `333fff6`, plus this
+  one. This session's message explicitly was not push authorisation.
+
+**Badrish:** "Sign in with Google is done." — and the `.apk` question, which was the record's fault,
+not his.
+
 ## 2026-09-06 (third) — the Mathematician's `baseContent` answer folded in; nothing built
 **Worked:** builder, designer (mathematician's answer, delivered before this session)
 

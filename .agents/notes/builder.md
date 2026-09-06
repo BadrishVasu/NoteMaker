@@ -1,5 +1,34 @@
 # Builder's notebook — NoteMaker
 
+## 2026-09-06 (fourth) — a checkbox's *wording* cost Badrish a round trip
+
+Badrish asked me for an `.apk`. There is no `.apk`; there never will be. He asked because a checkbox
+I wrote said **"Installed to an Android homescreen"**, and to anyone who is not already holding the
+PWA decision in their head, "installed" means a package.
+
+The lesson is narrower than "write clearly", and it is the one I want to keep: **a task written as a
+noun (an outcome) inherits whatever mechanism the reader already associates with that noun. A task
+written as a verb (the act) supplies its own.** "Installed to an Android homescreen" vs "open the
+live URL in Chrome and accept the install prompt — nothing is built or downloaded". Same fact, and
+only the second one can't be misread. Every remaining Badrish-action box in this project is now the
+second shape, and new ones should be written that way from the start.
+
+Second-order, and the reason it mattered at all: **that box was next to a stale one.** Sign-in had
+been done for some unknown stretch while the file still called it "the only step left". A reader
+looking at an out-of-date list has no way to tell which items are real, so they read the whole list
+harder than it deserves — which is exactly what happened. Staleness doesn't just misinform, it makes
+the *accurate* neighbours cost more attention.
+
+Both of those are the same 2026-09-01 lesson arriving from a new direction: an action succeeding
+silently falsifies documents nobody re-reads. I swept with grep rather than recall again and it paid
+again — ticket 10's Badrish-steps list would have had someone re-running three finished Cloudflare
+actions.
+
+One thing I deliberately did **not** do: chase the "believed to work on research alone" line in
+ticket 10's Overseer flag, or the "It is not deployed" lines in old journal/notebook entries. Those
+are dated records of what was true when written. Correcting history in place is the thing LOGBOOK.md
+forbids, and the fix for a superseded record is a newer record, not an edit.
+
 ## 2026-09-06 (third) — the Mathematician's baseContent answer, folded in
 
 Landed. Short version of what it cost and what it bought: **zero code changes to what I shipped, and
