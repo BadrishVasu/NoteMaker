@@ -1,5 +1,55 @@
 # Mathematician — notebook
 
+## 2026-09-06 — NoteMaker, `baseContent` capture points (ticket 02, third appendix)
+
+Builder sent the designer 2026-09-01 `baseContent` claim rather than building on it. Right call
+again: **the two stated capture points are insufficient — three gaps.** Full write-up is 02
+appendix 3. The one-line result:
+
+> `baseContent := the in-flight content` at **every** point where `baseRev := flightRev` and the
+> row stays dirty; `null` at every point where the row goes clean.
+
+The designer stated that only for the clean-push branch. It also has to fire on **already-landed**
+(retry/lost response/second tab), on **recreate-into-an-absent-doc**, on the **first landing of an
+unlanded create**, and — the expensive one — on the **conflict-branch outbox-slot migration**, which
+his rules do not mention at all. Gap C writes a genuinely stale `conflictBase` to the server on a
+copy-of-a-copy. That field is unretrofittable, so this was worth the run.
+
+### Dead ends and things now ruled out — do not re-walk these
+
+- **The biconditional `baseContent !== null ⟺ pendingRev !== null && baseRev !== null` is not the
+  property.** It is implied by the corrected rule and worth pinning, but it is a *shape* check. Run
+  against the Gap-C design it survived 466k and 897k states without firing, while the lineage
+  property failed at depth 6. Any time an invariant is expressible as a null-pattern over columns,
+  ask what it does *not* constrain — here, the value itself. Same shape as the P1b lesson from
+  2026-08-25: set membership vs. lineage, again.
+- **No `applySnapshot` cell needs a `baseContent` capture.** Builder suspected a dirty-row-adopting
+  cell. There is exactly one (cell 9) and it clears dirty, so `null` covers it. Checked, not
+  reasoned.
+- **Cell 7 (doc absent, dirty row) retaining `baseContent` is correct, not a leak.** The fork-point
+  content is a fact about a *rev*, not about the live document; purging the document does not
+  invalidate it. The model reaches the trace where that retained value is later written as a real
+  `conflictBase` after a recreate, and it is right there. Do not "clean it up".
+- **`baseRev === null` really is the only absent-`conflictBase` case** (checked as `P-ABS`). But the
+  reachable shape is not "an offline create conflicts" — that is impossible, an absent doc with
+  `baseRev === null` is an ordinary create. It is: our create lands, **the response is lost**, the
+  other device edits, our retry conflicts with `baseRev` still null. Anyone re-deriving this will
+  get the wrong story without `lose-response` in the alphabet.
+
+### The spike
+
+Throwaway, not committed, session scratchpad as `basecontent.js`. Focused model — not the full 02
+model; it drops P1/P2/P4 and checks only the `baseContent` family, which is why it is ~1.6M states
+at depth 11 instead of depth 9. Canonicalises states by renaming rev/content tokens in order of
+first appearance and GCs `revContent` to reachable revs; that renaming is what buys the extra depth
+and is worth reusing on the next 02 question. Flags: `CAP` (`general` | `designer` | `nocap2` |
+`nomigrate`), `START` (`landed` | `create`), `K`, `PURGE`, `D`, `ONLY`, `STOP`.
+
+**Three negative controls, each removing one clause and each failing** — recorded because the
+project has been burned once by a check that tested nothing, and because "0 violations" is
+worthless without them. Coverage counters on every transaction branch and every snapshot cell, for
+the same reason: at depth 9 the assertion site is reached 5,294 times.
+
 ## 2026-08-25 — NoteMaker, ticket 02 re-verified with snapshots
 
 Builder caught a real gap: my original ticket 02 model had four event kinds and no

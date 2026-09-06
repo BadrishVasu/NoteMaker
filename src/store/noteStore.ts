@@ -51,15 +51,32 @@ export interface NoteStore extends NoteStoreTx {
  *
  * `baseContent` is the content at `baseRev` — the fork point a Conflict copy's
  * `conflictBase` is written from, and 02 states that field cannot be retrofitted.
- * It is captured on the clean→dirty transition and again on commit of a clean push,
- * and cleared when the row goes clean. Each side of the biconditional catches one
- * failure, and both are silent until ticket 11 makes them expensive:
+ * Each side of the biconditional catches one failure, and both are silent until
+ * ticket 11 makes them expensive:
  *
  *   - missing when it should be present → a merge that is silently two-way forever
  *   - present when it should be absent  → a stale fork point written into a copy
  *
  * A guard on the object rather than a check on the caller: the leak worth catching is
  * a write path that reasons its way to a wrong row, not one that forgets to assert.
+ *
+ * **This is a shape check, and it is not the whole property.** Model-checked
+ * (02, appendix 3, mathematician, 2026-09-06): the biconditional is implied by the
+ * corrected capture rule and is safe to enforce on every write — it will not reject a
+ * legitimate row — but it is strictly weaker than what must hold. A row whose
+ * `baseContent` is simply the *wrong* content satisfies it; run against the design
+ * carrying that defect, it survived ~900k states without firing. The real property,
+ * *`baseContent` equals the content this row's `baseRev` was written with*, is a
+ * lineage claim about history that a single row cannot answer, so it cannot live here.
+ * It is pinned at the reconcile (step 3/4), where a fixture can remember content per
+ * rev. Do not let this function's presence be read as covering it.
+ *
+ * The capture rule itself is an engine rule, not a row-shape rule, and it is stated
+ * once, on `features/conflict-sync.md`: `baseContent := the in-flight content` at
+ * *every* transition that sets `baseRev := flightRev` while the row stays dirty (four
+ * transaction branches plus the conflict-branch outbox-slot migration), and `null`
+ * whenever the row goes clean. The earlier two-point version of this comment named one
+ * of those branches and was wrong.
  */
 export function assertRowInvariant(row: LocalNote): void {
   const shouldHave = row.pendingRev !== null && row.baseRev !== null

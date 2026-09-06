@@ -31,6 +31,9 @@ pipeline's data model all answer to it.
       `lastServerState`, the flight-token copy id, and "only adopt what this push just wrote".
 - [x] **The literal `NoteDoc` / `LocalNote` types** — architecture.md, "The types", designer,
       2026-09-01. Blocked build step 2; no longer.
+- [x] **`baseContent`'s capture points model-checked** (02 appendix 3, 2026-09-06). Three gaps in
+      the designer's two-point rule; one writes a stale `conflictBase` to the server. `P-INV`
+      confirmed safe to enforce, but shown strictly weaker than the real property.
 - [ ] Nothing built. No app code exists in this repo yet.
 
 ## Decisions
@@ -46,19 +49,33 @@ pipeline's data model all answer to it.
 - The mirror row must carry `baseContent` (the content at `baseRev`), or `conflictBase` cannot be
   written correctly — the fork-point content exists nowhere else at push time, and 02 states it is
   unretrofittable. Found while writing the types — designer — 2026-09-01
+- `baseContent` is captured at every transition that sets `baseRev := flightRev` on a still-dirty
+  row — not only the clean push — and cleared whenever the row goes clean. Pin the lineage
+  assertion alongside the biconditional; the biconditional alone misses the conflict-migration gap
+  — mathematician — 2026-09-06
+- **architecture.md corrected in place** — the superseded two-capture-point rule is marked, not
+  deleted, and the corrected state-keyed rule replaces it. Rules in this design are to be written
+  against *state changes*, not against branches; `applySnapshot`'s 14-cell state table is the form
+  to prefer. Swept the artifact for other branch-keyed rules: none found — designer — 2026-09-06
+- **Testable seam #4 moved off `sameContent`.** Its doc comment claimed `deletedAt` compares as a
+  boolean; `ForkPoint` has no `deletedAt`, so it never did and never could. Code unchanged (correct
+  as landed); comment fixed in both `src/domain/note.ts` and the artifact. The deletedAt-as-boolean
+  rule lives at the caller, `domain/reconcile`, against `ServerState` — Builder's position, agreed
+  by designer — 2026-09-06. Seams are renumbered: 6 = the `baseContent` lineage assertion at
+  `reconcile` (with the three model-checked gaps as named regressions), 7 = the fast-forward test
+  including deletedAt-as-boolean.
 
 ## Open questions
 
 - ~~Does manual-send break the snapshot-overwrite guard?~~ Answered in 02's amendment, 2026-08-25:
   no, provided `pendingRev` mints at edit time. Closed by designer, 2026-09-01.
-- Are `baseContent`'s two capture points (clean→dirty, and commit-of-a-clean-push) sufficient for
-  `conflictBase` to always equal the content at `baseRev` on the lineage? Reasoned, not checked —
-  same class of claim as 02's original snapshot rules, which were wrong. Not a step-2 blocker; the
-  field's presence is what step 2 commits to. **Sent to the mathematician 2026-09-06**, with three
-  additions to the brief: run it with `snapshot-delivered` as an event (the two capture points are
-  stated only in terms of edit and commit-push, so an `applySnapshot` cell that moves `baseRev`
-  without moving `baseContent` is the shape at risk); confirm the unlanded create is the *only*
-  reachable absent-`conflictBase` case; and say whether the biconditional
-  `baseContent !== null ⟺ pendingRev !== null && baseRev !== null` is implied by his result or is
-  stronger than what holds — build step 2 now **enforces** it on every store write, so a predicate
-  that is too strong rejects legitimate rows. Waiting on: mathematician
+- ~~Are `baseContent`'s two capture points sufficient?~~ **Answered: no** — 02 appendix 3,
+  mathematician, 2026-09-06. Three gaps. Corrected rule: *`baseContent := the in-flight content` at
+  every point where `baseRev := flightRev` and the row stays dirty; `null` whenever the row goes
+  clean* — which covers four transaction branches, not one, plus the conflict-branch outbox-slot
+  migration the designer's rules never mention. On the Builder's three additions: (a) no
+  `applySnapshot` cell needs a capture — cell 9 is the only dirty-row `baseRev` advance and it
+  clears dirty; the risk was in the *push* path, not the snapshot path; (b) confirmed, `baseRev ===
+  null` is the only absent-`conflictBase` case; (c) the biconditional is **exactly right** under the
+  corrected rule — neither too strong nor too weak — and safe to enforce on every store write, but
+  it is a *shape* check that does not catch the worst gap. Closed.

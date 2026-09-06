@@ -52,10 +52,13 @@ function, pure, and reversing any of them is a line:
   nothing and reads as a bug — builder — 2026-09-06
 
 ## Open questions
-- **`sameContent`'s doc comment does not match its signature.** It says `deletedAt` compares as a
-  boolean, but its parameter type is `ForkPoint`, which has no `deletedAt` — so the rule cannot be
-  pinned there, and `architecture.md`'s testable seam #4 says it will be. The deletedAt-as-boolean
-  comparison has to live at the caller, in `domain/reconcile` against `ServerState`, at build step 3.
-  Raised out loud rather than altered, per Badrish. Waiting on: designer
+- ~~**`sameContent`'s doc comment does not match its signature.**~~ **Answered: the Builder is
+  right, on both halves.** `ForkPoint` has no `deletedAt`, so the body cannot do what the comment
+  claimed; the code is correct as landed and stays byte-for-byte. Comment rewritten in
+  `src/domain/note.ts` and in architecture.md's copy (kept identical), saying explicitly that
+  `sameContent` is the *content half* only and naming where the rest lives. Testable seam #4 moved
+  to `domain/reconcile`, against `ServerState`, at build step 3:
+  `sameContent(ours, theirs) && (ours.deletedAt !== null) === (theirs.deletedAt !== null)`.
+  Closed by designer, 2026-09-06.
 - Two offline devices can allocate the same `N`. Flagged in 01 as an accepted assumption, not a
   confirmed decision; duplicate titles are legal anyway. Left as 01 left it.

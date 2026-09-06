@@ -144,7 +144,11 @@ export function toLocalNote(id: NoteId, doc: NoteDoc): LocalNote {
   return { ...doc, id, baseRev: doc.rev, pendingRev: null, baseContent: null }
 }
 
-/** Content equality — 02's fast-forward test. `deletedAt` compares as a boolean,
- *  because two deletes carry different millis and would conflict pointlessly. */
+/** Content equality over the three content fields, and only those — the *content half*
+ *  of 02's fast-forward test. `deletedAt` is deliberately not compared here: `ForkPoint`
+ *  has no `deletedAt`, so it cannot be. The deletedAt-as-boolean rule (two deletes carry
+ *  different millis and would conflict pointlessly) belongs to the caller — see
+ *  `domain/reconcile`, which holds both `deletedAt`s because it compares `ServerState`.
+ *  Corrected 2026-09-06; the previous comment claimed a behaviour this body never had. */
 export const sameContent = (a: ForkPoint, b: ForkPoint): boolean =>
   a.title === b.title && a.titleIsCustom === b.titleIsCustom && a.body === b.body

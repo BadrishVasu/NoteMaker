@@ -197,6 +197,39 @@ a general principle about rules not being schema validators. There is a *reachab
 it load-bearing — a dirty row with `baseRev === null` has no fork point, so its copy legitimately
 has one field and not the other. Good rule, better reason.
 
+### 2026-09-06 — my `baseContent` rule came back wrong, and the *shape* of why
+
+The Mathematician model-checked the two capture points I wrote on 2026-09-01. Not sufficient: three
+gaps, two of which write a wrong `conflictBase` — the field 02 says is unretrofittable. Corrected in
+`architecture.md` in place, old rule marked superseded rather than deleted.
+
+**The lesson is not "I missed three branches." It is that I keyed the rule to a branch at all.** I
+wrote "on commit of a clean push" when the thing `baseContent` actually depends on is `baseRev`
+moving. A rule keyed to a branch is wrong the moment a branch is added, and four branches move
+`baseRev` here, plus a fifth transition (conflict-branch outbox-slot migration) that my rules never
+mentioned — the one that writes a two-generations-stale `conflictBase` to a real document. State-
+keyed rules do not have this failure mode, which is why `applySnapshot`'s 14-cell table over states
+has survived every re-check and my prose rule did not. **Prefer the table.** I swept the rest of
+architecture.md for the same shape and found no second offender; the sweep result and its reasoning
+are recorded in the artifact so nobody re-runs it.
+
+Second thing, and it is the more uncomfortable one: **`P-INV` was my proposed guard and it is a
+shape check, not a correctness check.** It is exactly right as a biconditional — the model confirms
+it is neither too strong nor too weak — and it survived ~900k states against the broken design
+without firing once. So I proposed an invariant that is *true*, *cheap*, *enforceable*, and *blind
+to the worst gap it was supposed to cover*. An invariant passing is not evidence the property holds
+unless someone has shown the invariant implies the property. The lineage assertion is the real
+check, it needs a per-rev content fixture, and it belongs at the reconcile, not in the store suite.
+
+Related, same session: **`sameContent`'s doc comment claimed a `deletedAt`-as-boolean behaviour its
+own signature makes impossible** — `ForkPoint` has no `deletedAt`. Builder caught it, kept the code
+verbatim, and raised it instead of quietly patching, which is the right call. I agree with his
+position and took it: the rule lives at the caller, against `ServerState`, and testable seam #4 has
+moved to `domain/reconcile` (now seams 6 and 7 in the artifact). Worth noting *how* this got in: I
+wrote the comment describing the concept and the body implementing the type, in one pass, and never
+re-read one against the other. A doc comment that contradicts its signature is a cheap class of bug
+to catch and I did not catch it.
+
 ### Testable seams I named for the Builder and for ticket 09
 
 `NoteStore` port (contract suite run against a fake and against `idb` — this is how 09 gets a second

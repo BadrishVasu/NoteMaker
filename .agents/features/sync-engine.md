@@ -29,6 +29,9 @@ one.
       being written wrongly there. Lands with the gateway at step 5.
 - [ ] **The `LocalNote extends NoteDoc` leak guard — lands HERE, at step 4, with `fakeGateway`.**
       Written onto this file three steps early so it survives. Detail under Decisions.
+- [ ] **The `baseContent` capture rule, and the lineage assertion that proves it.** Both land here,
+      not at step 2. Detail under Decisions; the three named regression tests are Gaps A, B and C
+      from 02 appendix 3, each with the Mathematician's own trace as the test body.
 
 ## Decisions
 - Import boundary replaces 02's name list: only `sync/firestoreGateway.ts` may import
@@ -66,6 +69,26 @@ one.
   step 4 (`fakeGateway`), so there is nothing at step 2 for the assertion to sit on. Step 2 shipped
   without it, correctly. Two key-set assertions, one for an ordinary Note and one for a fully
   populated Conflict copy — builder — 2026-09-06
+
+- **`baseContent`'s capture is an engine rule, and it is keyed to a state change, not to a branch**
+  — mathematician, 2026-09-06 (02, appendix 3). Stated once: *`baseContent := the content that was
+  in flight` at every transition where `baseRev := flightRev` and the row stays dirty; `null` at
+  every transition where the row goes clean.* That is **four** transaction branches — clean push,
+  already-landed (`srv.rev === pendingRev`, i.e. retry / lost response / second tab), recreate into
+  an absent document, and the first landing of an unlanded create — **plus** the conflict-branch
+  outbox-slot migration of defect 3, which the Designer's rules never mentioned and which is the one
+  that writes a two-generations-stale `conflictBase` to a real server document. No `applySnapshot`
+  cell captures: cell 9 is the only dirty-row `baseRev` advance and it clears dirty; **cell 7 retains
+  `baseContent` and that is correct, not a leak** — the fork point is a fact about a rev, not about
+  the live document, and the model reaches the trace where the retained value is later written as a
+  correct `conflictBase` after another device recreates the doc. Do not "clean it up".
+- **The step-2 store invariant does not cover this, and must not be read as covering it** —
+  builder, 2026-09-06. `P-INV` is confirmed exactly right and stays enforced on every write, but it
+  is a *shape* check: a row carrying the wrong `baseContent` satisfies it, and it survived ~900k
+  states against the Gap-C design without firing while the lineage property failed at depth 6. So
+  step 3's reconcile tests need a fixture that **remembers content per rev**, and the assertion is
+  *`baseContent` equals the content this row's `baseRev` was written with*. That fixture is a
+  prerequisite of the reconcile tests, not an extra — without it the capture rule is untested.
 
 ## Open questions
 - None blocking the engine's own work. One dependency elsewhere:

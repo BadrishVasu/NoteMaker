@@ -69,8 +69,9 @@ Full reasoning lives on ticket 03; the constraints that forced each, in one line
   violating row on disk. A test that only inspects rows the test itself constructed proves the test
   correct, not the store — the same objection that moved the `extends` guard onto the gateway's
   object. Its predicate is `baseContent !== null ⟺ pendingRev !== null && baseRev !== null`, which
-  is **pending the Mathematician's confirmation** (open question below); if he corrects it, it is
-  one function in `store/noteStore.ts` — builder — 2026-09-06
+  is **confirmed exactly right** by the Mathematician (02 appendix 3, 2026-09-06) — no code change
+  was needed. Its scope is now stated on the function itself: shape, not lineage — builder —
+  2026-09-06
 - **The fake is opened and deleted by uid, exactly like the `idb` database, and survives `close()`.**
   Ticket 09 simulates a second device as a second store instance, and a device that forgets
   everything when its tab closes is not a device — builder — 2026-09-06
@@ -82,11 +83,14 @@ Full reasoning lives on ticket 03; the constraints that forced each, in one line
   three lines — designer — 2026-09-01
 
 ## Open questions
-- **Is the enforced `baseContent` biconditional the right predicate?** The store now rejects rows
-  that violate it, so if it is *stronger* than what actually holds, a legitimate row becomes an
-  unwritable one. Sent to the Mathematician 2026-09-06 as part of the capture-point question; see
-  `conflict-sync.md`. Contained: one function, nothing consumes the store yet. Waiting on:
-  mathematician
+- ~~Is the enforced `baseContent` biconditional the right predicate?~~ **Answered: yes, exactly**
+  — mathematician, 02 appendix 3, 2026-09-06. Implied by the corrected capture rule, neither
+  stronger nor weaker as a shape check, safe to enforce on every write; it will not reject a
+  legitimate row. `assertRowInvariant` is unchanged and step 2 needed no code fix. **But it is a
+  shape check only** — a row carrying the *wrong* `baseContent` satisfies it (it survived ~900k
+  states against the Gap-C design without firing). The lineage check that does catch that is an
+  engine-level property and is booked at step 3 on `sync-engine.md`, not here. The function's doc
+  comment now says so, so nobody reads its presence as coverage. Closed.
 - Growth story past ~2,000 Notes / ~20 MB — deferred to the map's "Not yet specified"
 - Read cost per app open under Android's constant background/reap cycle — Builder's step-7
   measurement decides whether `persistentLocalCache` comes back on. Waiting on: builder

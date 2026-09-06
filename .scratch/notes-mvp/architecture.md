@@ -579,8 +579,12 @@ export function toLocalNote(id: NoteId, doc: NoteDoc): LocalNote {
   return { ...doc, id, baseRev: doc.rev, pendingRev: null, baseContent: null }
 }
 
-/** Content equality — 02's fast-forward test. `deletedAt` compares as a boolean,
- *  because two deletes carry different millis and would conflict pointlessly. */
+/** Content equality over the three content fields, and only those — the *content half*
+ *  of 02's fast-forward test. `deletedAt` is deliberately not compared here: `ForkPoint`
+ *  has no `deletedAt`, so it cannot be. The deletedAt-as-boolean rule (two deletes carry
+ *  different millis and would conflict pointlessly) belongs to the caller — see
+ *  `domain/reconcile`, which holds both `deletedAt`s because it compares `ServerState`.
+ *  Corrected 2026-09-06; the previous comment claimed a behaviour this body never had. */
 export const sameContent = (a: ForkPoint, b: ForkPoint): boolean =>
   a.title === b.title && a.titleIsCustom === b.titleIsCustom && a.body === b.body
 ```
@@ -602,33 +606,86 @@ whatever was to hand, and 02 is explicit that this field "genuinely cannot be re
 wrong and every merge in ticket 11 is silently two-way forever, unable to tell "I added this line"
 from "they deleted this line".
 
-**Fix: `baseContent: ForkPoint | null` on the mirror row, local-only.** It is captured at exactly
-two moments, both of which the engine already has the value in hand for:
+**Fix: `baseContent: ForkPoint | null` on the mirror row, local-only.**
 
-1. **On the clean → dirty transition** (first keystroke on a clean row): `baseContent := the row's
-   content before the edit`. `baseRev` is fixed for the whole dirty episode, so one capture covers
-   every subsequent keystroke.
-2. **On commit of a clean push**, where `baseRev := pendingRev`: `baseContent := the content that
-   was in flight`, which is no longer the row's content if the user typed during the flight. Missing
-   this second capture is the subtle half; the first alone is wrong exactly in the "typed during the
-   flight" case that 02's model split `begin-push`/`commit-push` to reach.
+> **Superseded, 2026-09-06 — do not implement the rule this section used to state.** It named
+> **two** capture points: clean → dirty, and "commit of a clean push". The Mathematician
+> model-checked it (02, "Appendix — `baseContent`'s capture points, model-checked") and it is **not
+> sufficient — three gaps, two of which silently write a wrong `conflictBase`**, the one field 02
+> says cannot be retrofitted. The old rule is kept above in this sentence rather than deleted, so
+> that anyone who saw it recognises what replaced it. The corrected rule follows.
 
-Cleared to `null` whenever the row goes clean. Cost: one body-sized string per dirty row, in
-IndexedDB only, never on the wire. **Invariant for the contract suite** — cheap to test, and it
-catches both capture points: `baseContent !== null` if and only if `pendingRev !== null &&
-baseRev !== null`.
+The defect in the old wording is worth naming, because it is a pattern and not a typo. The rule was
+keyed to a **branch** ("commit of a clean push") when the thing it actually depends on is a **state
+change** (`baseRev` moved). `baseContent` is a *function of the row's `baseRev`*, so it must be
+re-established wherever `baseRev` moves — and a branch-keyed rule goes stale the moment a branch is
+added, which is exactly how it missed three of them. Stated once, against the state change:
+
+> **`baseContent := the content that was in flight` at every point where `baseRev := flightRev` and
+> the row remains dirty; `baseContent := null` at every point where the row becomes clean.**
+
+Expanded into the three places the engine touches it:
+
+1. **Clean → dirty** (first keystroke, or first delete, on a clean row): `baseContent := the row's
+   content before the edit`. Unchanged from the original. A clean row always has `baseRev !== null`
+   (`P-CLEAN`), so this never captures against a null base.
+2. **Any commit that advances `baseRev` to the flight token — four of the transaction's branches,
+   not one.** `srv.rev === baseRev` (the clean push, the only one the old rule named);
+   `srv.rev === pendingRev` (already landed — retry after a lost response, or a second tab);
+   recreate into an absent document; and the first landing of an unlanded create
+   (`baseRev === null`). Typed during the flight → `baseContent := the in-flight content`;
+   otherwise the row goes clean and `baseContent := null`.
+3. **Conflict-branch outbox-slot migration — the transition the old rule did not mention at all,
+   and the dangerous one.** When the slot migrates onto the copy row *and the user typed during the
+   flight*, the migrated copy row takes `baseRev := flightRev` and therefore `baseContent := the
+   in-flight content` — the same value just written as the copy's `conflictBase`. Nothing typed →
+   the copy row is born clean, `baseContent := null`. Without this, the copy row carries a
+   `baseContent` from before the conflict, and the model reaches a trace where that value is written
+   to a real server document as a `conflictBase` **two generations stale**.
+
+**No `applySnapshot` cell needs a capture.** Cell 9 is the only cell that moves `baseRev` on a dirty
+row and it clears dirty, so `baseContent := null` covers it. Cell 7 (document absent, dirty row) is
+a no-op and **must stay one** — retaining `baseContent` there is correct, because the fork-point
+content is a historical fact about a rev, not a live fact about the document.
+
+Cost: one body-sized string per dirty row, in IndexedDB only, never on the wire.
+
+**Two checks, at two different seams — pin both.**
+
+- **`P-INV`, the row-shape invariant, in the `NoteStore` contract suite:** `baseContent !== null` if
+  and only if `pendingRev !== null && baseRev !== null`. Confirmed by the model to be **exactly
+  right** under the corrected rule — neither too strong (it rejects no legitimate row) nor unsafe to
+  enforce on every write. It stays as written.
+- **The lineage assertion, at the reconcile — a separate and strictly stronger check:**
+  *`baseContent` equals the content this row's `baseRev` was written with.* `P-INV` is a **shape**
+  check, and shape is not lineage: the migration gap produces a row with non-null `baseContent` and
+  non-null `baseRev`, so the biconditional is satisfied by a value that is simply wrong. Run against
+  the broken design, `P-INV` survived ~900k states without firing while the lineage property failed
+  at depth 6. This one needs a fixture that remembers content per rev, which is why it belongs where
+  `reconcile` is tested and not in the store contract suite. Without it, `P-INV` is a shape check
+  wearing a correctness check's name.
+
+**Swept the rest of this document for the same defect (2026-09-06), since branch-keyed rules are a
+pattern and not a one-off.** No second offender. The reason is worth knowing rather than trusting:
+the other two rules that could have had this shape are already written against state, not branches
+— "snapshots never overwrite a dirty body but *always* record `lastServerState`" is keyed to the
+event unconditionally, and `applySnapshot` is specified as a **14-cell table over states** rather
+than as a list of branches, which is structurally immune to a branch being added later. That table
+is the antidote, and it is the form to prefer for any rule added to this design from here. Two
+narrower rules key off a *condition* rather than a branch and are fine as written: `toLocalNote` is
+valid only for an insert into an absent row (decision #8), and `decide` falls back to the
+transaction read only while `initialSyncCompletedAt` is unset.
 
 **This amends ticket 03's "the mirror row is 01's shape plus `baseRev`, `pendingRev`, and nothing
 else."** It does not touch the wire document, the rules, the three equality tests, or the snapshot
 guard predicate. It is not a second field encoding an existing fact — the fact it carries exists
 nowhere else — so it is not the `synced`-boolean mistake 03 rejected.
 
-**Owed to the Mathematician, not asserted here:** the claim that those two capture points are
-sufficient is reasoned, not model-checked, and it is the same class of claim as 02's original
-snapshot rules — which were reasoned, and were wrong. The check is cheap because the model already
-exists: add `baseContent` to the device state, assert at every conflict-branch write that the copy's
-`conflictBase` equals the content at the row's `baseRev` on the lineage. Not a step-2 blocker — the
-field's *presence* is what step 2 commits to, and its presence is not in doubt.
+**Sent to the Mathematician rather than asserted, and it came back wrong — as designed.** The
+two-capture-point claim was reasoned, not model-checked, and it was the same class of claim as 02's
+original snapshot rules, which were also reasoned and also wrong. Sending it is the part that
+worked; the correction above is the result. The field's *presence* was never in doubt, which is why
+step 2 was not blocked on this.
 
 ### Decisions I had to make rather than look up
 
@@ -693,9 +750,24 @@ into a silently dropped field.
 ### Testable seams this creates, in step-2 order
 
 1. `toNoteDoc` key-set assertion, both shapes — decision #5's guard. **Write this first.**
-2. The `baseContent` invariant (`baseContent !== null ⟺ pendingRev !== null && baseRev !== null`),
-   asserted in the `NoteStore` contract suite so it holds against the fake and against `idb`.
+2. The `baseContent` row-shape invariant (`baseContent !== null ⟺ pendingRev !== null &&
+   baseRev !== null`), asserted in the `NoteStore` contract suite so it holds against the fake and
+   against `idb`. **This is shape only** — the lineage assertion that actually protects
+   `conflictBase` is seam 6, at step 3.
 3. Round-trip: `toLocalNote(id, doc)` then `toNoteDoc` returns a document deep-equal to `doc`.
-4. `sameContent` ignores `updatedAt`, `createdAt`, `rev` and `deletedAt`'s millis — it is 02's
-   fast-forward test and this is where its `deletedAt`-as-boolean rule gets pinned.
+4. `sameContent` ignores `updatedAt`, `createdAt` and `rev`. **Corrected 2026-09-06:** this seam
+   used to also claim `deletedAt`-as-boolean was pinned here. It cannot be — `sameContent` takes
+   `ForkPoint`, which has no `deletedAt`. The code was always right; this seam and the comment were
+   not. The deletedAt-as-boolean rule now belongs to **seam 7**, at the caller.
 5. `isConflictCopy` is true for `conflictOf` without `conflictBase` (decision #4's reachable case).
+
+Two more seams, at step 3 rather than step 2, both moved here on 2026-09-06:
+
+6. **The `baseContent` lineage assertion, at `reconcile`:** `baseContent` equals the content this
+   row's `baseRev` was written with. Needs a fixture that remembers content per rev. The three
+   model-checked gaps are its named regression cases — already-landed retry, unlanded-create first
+   landing, and conflict-branch slot migration (02's Gap C trace is the one to transcribe literally).
+7. **Fast-forward, at `reconcile`, against `ServerState`:** content equal *and* `deletedAt` equal as
+   a boolean — `sameContent(ours, theirs) && (ours.deletedAt !== null) === (theirs.deletedAt !==
+   null)`. Two deletes at different millis must fast-forward, not conflict; a delete against a live
+   edit must not.

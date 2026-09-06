@@ -1,5 +1,69 @@
 # Builder's notebook — NoteMaker
 
+## 2026-09-06 (third) — the Mathematician's baseContent answer, folded in
+
+Landed. Short version of what it cost and what it bought: **zero code changes to what I shipped, and
+a rule I would have got wrong at step 3 in three separate places.**
+
+### What I got right, and why it was worth the wait
+
+Refusing to pin `assertRowInvariant` on the Designer's reasoned claim was the correct call and it is
+the one I want to remember the *shape* of. The predicate came back confirmed exactly — so on the
+surface, waiting bought nothing. It did not: the same run that confirmed my predicate disproved the
+rule that predicate was written to protect, and found a gap that writes a permanently-wrong
+`conflictBase` to a real server document. If I had shipped on the reasoned claim I would have shipped
+a green suite over a broken engine rule and never known, because the suite *cannot see it*.
+
+That is the lesson, sharper than "ask the Mathematician on hard things": **a check confirmed correct
+is not a check that covers what you wanted covered.** `P-INV` survived ~900k states against the
+defective design without firing once. It is a shape check. I let its name and its placement imply a
+correctness guarantee it never had, and the doc comment I wrote said as much ("captured on the
+clean→dirty transition and again on commit of a clean push") — stating the disproven rule as fact,
+inside the guard, where the next engineer would read it as authoritative. Fixed: the comment now
+states the corrected rule, names itself a shape check, and points at where the lineage assertion
+lives. Comment-only, no behaviour, so no test moved.
+
+### The three gaps, in my own words, so I recognise the pattern rather than the instances
+
+Every one of them is the same error, and it is not the Designer's alone — I read those two capture
+points and did not flag them:
+
+> The rule was keyed to a **branch** ("commit of a clean push") when the fact it protects is a
+> **state change** ("`baseRev` moved"). Branch-keyed rules go stale the moment a branch is added.
+
+There were four branches that move `baseRev`, not one, plus a fifth transition that isn't a
+transaction branch at all — the outbox-slot migration from *my own* defect-3 fix, which nobody's
+rules mentioned. That last one is the one to sit with: a correct fix to defect 3 created a new
+`baseRev`-advancing transition, and the capture rule, being keyed to branches, silently did not
+cover it. My own patch aged out someone else's rule and neither of us noticed.
+
+Wherever I write an invariant from here: state it against the state change, then enumerate the
+transitions that produce it, and treat "I added a branch" as an event that re-opens every rule.
+
+### Booked, not built
+
+The corrected rule and the lineage assertion are on `features/sync-engine.md` under Decisions, with
+Gaps A/B/C named as regression tests carrying the Mathematician's own traces as their bodies. I did
+**not** build them this session and that is deliberate — `domain/reconcile` does not exist, and a
+fixture written before the unit it tests is a fixture written against an imagined signature. The
+prerequisite is recorded loudly enough that step 3 cannot start without it: the reconcile tests need
+a fixture that **remembers content per rev**, because without it the lineage assertion cannot be
+written at all.
+
+One thing to carry into step 3 and not argue with: **appendix cell 7 retains `baseContent` on a
+dirty row with an absent server document, and that is correct.** It looks exactly like a leak. The
+model reaches the trace where that retained value is later written as a *right* `conflictBase` after
+another device recreates the doc. It is flagged on `sync-engine.md` as do-not-clean-up; I am
+recording it here too because it is the kind of thing a future me tidies away in a refactor.
+
+### Sent, this session
+
+Both Designer items in one invocation rather than two — the capture-rule correction (with the
+Mathematician's branch-vs-state-change point passed through verbatim, since it generalises past this
+bug) and the `sameContent`/`ForkPoint` `deletedAt` contradiction, with my position that seam #4
+moves to the reconcile against `ServerState`. Batched because step 3 consumes both and a second
+round trip buys nothing.
+
 ## 2026-09-06 (later) — a document said a file existed, and I believed my own journal
 
 Three things worth keeping from the first session that actually produced application logic.

@@ -494,3 +494,116 @@ Two devices; one primary Note plus its copies; no interactive merge; title and `
 with content rather than being modelled separately; fast-forward on independently-identical text is
 not exercised, since tokens are unique by construction (it is a no-op branch either way); no third
 device. Depth 9. The spike is throwaway and deliberately not committed.
+
+## Appendix — `baseContent`'s capture points, model-checked (mathematician, 2026-09-06)
+
+The 2026-09-01 designer amendment above added a local-only `baseContent: ForkPoint | null` and
+specified **two** capture points. Builder refused to pin its contract-suite invariant on a reasoned
+claim. Correct call: **the two capture points as stated are NOT sufficient. Three gaps, two of
+which corrupt `conflictBase` — the one field this ticket says cannot be retrofitted.**
+
+Re-modelled and re-run. The design below holds; the design as written does not.
+
+### The corrected rule
+
+`baseContent` is a *function of the row's `baseRev`*. It must therefore be re-established at **every**
+transition that moves `baseRev` on a row that stays dirty — not only at the clean push. Stated once:
+
+> **`baseContent := the content that was in flight` at every point where `baseRev := flightRev` and
+> the row remains dirty; `baseContent := null` at every point where the row becomes clean.**
+
+Expanded into the three places the engine touches it:
+
+1. **Clean → dirty** (first keystroke, or first delete, on a clean row): `baseContent := the row's
+   content before the edit`. **Unchanged from the designer.** A clean row always has
+   `baseRev !== null` (checked, `P-CLEAN`), so this never captures against a null base.
+2. **Any commit that advances `baseRev` to the flight token.** That is *four* of the transaction's
+   branches, not one: `srv.rev === baseRev` (clean push), **`srv.rev === pendingRev` (already
+   landed — retry, lost response, second tab)**, **recreate into an absent document**, and **the
+   first landing of an unlanded create (`baseRev === null`)**. The designer wording ("commit of a
+   clean push") names only the first. If the user typed during the flight, set `baseContent := the
+   in-flight content`; otherwise the row goes clean and `baseContent := null`.
+3. **Conflict-branch outbox-slot migration.** When the slot migrates onto the copy row *and the user
+   typed during the flight*, the migrated copy row takes `baseRev := flightRev` and therefore
+   `baseContent := the in-flight content` — the same value that was just written as the copy's
+   `conflictBase`. When nothing was typed the copy row is born clean and `baseContent := null`.
+   **The designer rules do not mention this transition at all, and it is the dangerous one.**
+
+**No `applySnapshot` cell needs a capture.** Cell 9 is the only cell that moves `baseRev` on a dirty
+row, and it clears dirty, so `baseContent := null` covers it. Cell 7 (document absent, dirty row) is
+a no-op and must stay one: retaining `baseContent` there is *correct*, because the fork-point content
+is a historical fact about a rev, not a live fact about the document. The model reaches the trace
+where that retained value is later written as a real `conflictBase` after another device recreates
+the document, and it is right there.
+
+### The three gaps, with the traces that expose them
+
+Each is a run of the model with exactly one clause of the corrected rule removed — a negative control
+in the strict sense, showing the assertion can fail.
+
+- **Gap A — already-landed.** `edit(0,N) -> bpush(0,N) -> lose(0,N) -> bpush(0,N) -> edit(0,N) ->
+  cpush(0,N)`. The lost response makes the retry take the `srv.rev === pendingRev` branch, which is
+  not the clean-push branch; `baseRev` advances, `baseContent` does not. Caught as `P-BC` at depth 6.
+- **Gap B — the unlanded create first landing.** `bpush(0,N) -> edit(0,N) -> cpush(0,N)` from the
+  `create` start state. `baseRev` goes `null -> flightRev` with the row still dirty and
+  `baseContent` still `null`. Caught as **`P-INV`** at depth 3 — this one the biconditional does
+  catch.
+- **Gap C — conflict slot migration. The expensive one.**
+  `edit(0,N) -> bpush(0,N) -> edit(1,N) -> bpush(1,N) -> edit(1,N) -> cpush(1,N)` leaves device 1
+  migrated copy row at `baseRev = R4` carrying the *pre-conflict* `baseContent = C0`. Continue:
+  `... -> snap(0,copy) -> edit(0,copy) -> bpush(0,copy) -> edit(1,N) -> cpush(1,N) ->
+  bpush(1,copy)` and the model writes a real document to the server with
+  `conflictBase = C0` where the fork point is `C3` — **a `conflictBase` two generations stale,
+  silently, permanently, on exactly the field this ticket says is unrecoverable.**
+
+### `P-INV` is a real tripwire but it is strictly weaker than the property
+
+The contract-suite invariant proposed in `architecture.md`,
+`baseContent !== null ⟺ pendingRev !== null && baseRev !== null`, **is implied by the corrected rule
+and is safe to pin** — it holds in every configuration below. But it is **not equivalent** to what
+has to hold, and it does not catch Gap C: the migrated row has a non-null `baseContent` and a
+non-null `baseRev`, so the biconditional is satisfied by a value that is simply *wrong*. Run against
+the Gap-C design alone, the biconditional survives **466,212 states (no purge) and 897,351 states
+(with purge) without firing once**, while the lineage property fails at depth 6.
+
+**So pin both.** The biconditional in the `store/` contract suite where it belongs (it is a row-shape
+property), and separately, wherever the engine reconcile is tested, the real one:
+*`baseContent` equals the content this row `baseRev` was written with.* The second needs a test
+fixture that remembers content per rev; without it, step 2 invariant is a shape check wearing a
+correctness check name.
+
+### `conflictBase` absent: `baseRev === null` is the only case, and it is reachable
+
+Checked as a property (`P-ABS`) at every copy write: a copy is born without `conflictBase` **only**
+when the flight `baseRev` is null. Designer decision #4 is confirmed, and the model names the
+shape it actually takes — it is not merely "an offline create that conflicts", which cannot happen:
+**our create lands, the response is lost, the other device edits it, and our retry conflicts with
+`baseRev` still `null`.** 346 such writes in the `create` configuration at depth 9. `ConflictCopyDoc`
+narrowing on `conflictOf` alone is right.
+
+### The run
+
+Two devices, one server, primary Note plus copies (copies of copies included, and the user may edit
+a copy). Events: `edit`, `del`, `bpush`, `cpush`, `lose-response`, `snapshot-delivered`, `purge` —
+the same alphabet as the 2026-08-25 appendix, which is what made Gap C reachable at all. The
+transaction executes atomically at `bpush`, local bookkeeping at `cpush`. Properties: `P-CB`
+(conflictBase equals the content at the flight `baseRev`, asserted at every copy write), `P-BC`
+(the same, as a global row invariant), `P-INV`, `P-CLEAN`, `P-ABS`.
+
+**All properties hold under the corrected rule** across eight configurations at depth 9
+(`START` in {landed, create} x `K` in {1, 2} x `PURGE` in {off, on}; 103,787 / 212,614 / 102,681 /
+181,956 / 14,494 / 29,363 / 12,946 / 24,735 states), and deeper on three: **depth 11 landed
+(1,606,579 states)**, depth 10 landed with purge (795,119), depth 11 create with purge (300,376).
+Every branch is covered — the coverage counters are in the spike, and the assertion site itself is
+reached 5,294 times in the depth-9 landed run, so this is not a check that silently tested nothing.
+
+Config flags, so this is re-runnable: `CAP` (`general` = corrected rule | `designer` = the literal
+two capture points | `nocap2` = capture point 2 deleted | `nomigrate` = Gap C isolated), `START`
+(`landed` | `create`), `K` (snapshot queue depth), `PURGE`, `D` (depth), `ONLY` (restrict to one
+property). Spike is throwaway and deliberately not committed.
+
+### Limits
+
+Two devices. No cross-Note interaction (02 already proves per-Note independence is total). Content
+tokens are unique by construction, so `fast-forward` fires only via the delete path — same limit as
+the 2026-08-25 run. `updatedAt`/`createdAt` not modelled; they are not read by the mechanism.

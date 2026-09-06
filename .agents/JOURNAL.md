@@ -2,6 +2,51 @@
 
 Newest entry first. Append only.
 
+## 2026-09-06 (third) — the Mathematician's `baseContent` answer folded in; nothing built
+**Worked:** builder, designer (mathematician's answer, delivered before this session)
+
+**Moved:**
+- **The answer landed and it changed no shipped code.** `assertRowInvariant`'s predicate came back
+  **confirmed exactly right** — implied by the corrected rule, safe to enforce on every write, and
+  it rejects no legitimate row. Step 2 needed no fix. The `local-store.md` open question is closed.
+- **But the rule that predicate protects was disproven, and that is the real result.** The
+  Designer's two capture points are insufficient: three gaps, two of which silently write a wrong
+  `conflictBase` — the one field 02 says cannot be retrofitted. Corrected rule is keyed to the state
+  change, not to a branch: *`baseContent := the in-flight content` at every transition where
+  `baseRev := flightRev` and the row stays dirty; `null` whenever the row goes clean.* Four
+  transaction branches plus the conflict-branch outbox-slot migration that nobody's rules mentioned.
+- **`P-INV` is a shape check and I had let its doc comment imply more.** The comment stated the
+  disproven two-point rule as fact, inside the guard, where step 3 would read it as authoritative.
+  Rewritten: it now states the corrected rule, names itself shape-not-lineage, and points at where
+  the lineage assertion lives. Comment-only, no behaviour, so no test moved. The number that makes
+  the distinction concrete: run against the defective design, `P-INV` survived **~900k states
+  without firing once** while the lineage property failed at depth 6.
+- **Both Designer items sent in one invocation and both came back corrected.** (a) `architecture.md`
+  now carries the state-keyed rule with the old one marked superseded rather than deleted; he swept
+  the artifact for other branch-keyed rules and found none, with the reason written down rather than
+  asserted. (b) `sameContent`'s comment claimed a `deletedAt` behaviour its `ForkPoint` signature
+  cannot have — he agreed, the code stays byte-for-byte, the comment is fixed in `src/domain/note.ts`
+  and in the artifact's fenced copy so "landed verbatim" still holds, and testable seam #4 no longer
+  claims the deletedAt rule. Seams 6 and 7 added at step 3.
+- **Booked, not built.** The corrected rule and the lineage assertion are on `features/sync-engine.md`
+  under Decisions, with Gaps A/B/C named as regression tests carrying the Mathematician's own traces.
+  Deliberately not built: `domain/reconcile` does not exist, and a fixture written before its unit is
+  written against an imagined signature.
+- Typecheck, lint and the full suite green after all of the above (119 tests). One commit, unpushed.
+
+**Open:**
+- **Step 3 is next and its prerequisite is now explicit:** the reconcile tests need a fixture that
+  **remembers content per rev**, or the lineage assertion cannot be written at all. That fixture is
+  part of step 3, not an extra.
+- **Do not "clean up" appendix cell 7.** A dirty row with an absent server document retains
+  `baseContent`, and that is correct — the fork point is a fact about a rev, not about the live
+  document. It looks exactly like a leak. Flagged on `sync-engine.md` and in my notebook.
+- **Three commits are local and stay local** — `3d705a2`, `9e39b82`, `db90efa`, plus this session's.
+  No word from Badrish on any of these specific pushes, and this session's message did not give one.
+- Badrish's two physical acts, unchanged: the live Google sign-in and the Android install.
+
+**Badrish:** none this session — the instruction was "have a look" at the Mathematician's reply.
+
 ## 2026-09-06 (later) — first application logic in the repo: steps 1 and 2 built
 **Worked:** builder, mathematician
 
