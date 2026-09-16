@@ -2,6 +2,23 @@
 
 Newest entry first. Append only.
 
+## 2026-09-16 (audit) — reconstructed: the 09-01 to 09-06 "unwritten Designer sessions"
+**Worked:** builder. Reconstructed today from transcripts, not memory; covers 2026-09-01 to 2026-09-06.
+
+**Moved:**
+- **The Designer ran once in that window, not 35 times:** 2026-09-01 15:36–15:42 IST, session
+  `7fe4b2a0`, "write NoteDoc and LocalNote". Its work sat uncommitted until `0e32dce` (09-06 21:00)
+  and was journaled in the 2026-09-06 entry. That entry never said the work was five days old. It
+  should have, and that is the one real gap.
+- **09-02 to 09-04: no NoteMaker work happened.** The 22 session IDs logged on those days have no
+  transcript under any project. Session `7fe4b2a0` has no turns dated 09-02 to 09-05, so its 09-04
+  rows came from closes or resumes with no turns in them. The SessionEnd hook checks project-keyed
+  markers, so every session that ended on this machine logged `agents=designer`, copied from the
+  09-01 marker. A row means "the journal is older than the marker", not "the Designer worked".
+
+**Open:** nothing. The Designer's notebook already has its 2026-09-01 entry, so it has nothing left
+to write. Claude is fixing the log's never-cleared rows.
+
 ## 2026-09-16 (later) — the seven pushed; deploy verified, correcting Operations' first read
 **Worked:** builder, operations
 
