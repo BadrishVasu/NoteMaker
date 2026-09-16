@@ -1,5 +1,51 @@
 # Overseer's notebook — NoteMaker
 
+## 2026-09-16 — Day 3 audit, 0e32dce..721e875
+
+**Verdict: on track.** First check since 08-25. That's three weeks and the first real code, which is
+too long between checks. My fault, not the org's.
+
+### What I checked myself (not taken from the record)
+- tsc 0, lint 0, vitest 119/119 at HEAD.
+- `0e32dce` is on origin/main. `9513dde..ec664aa` = 7 commits, so "all seven" matches. `721e875` is local only.
+- The public GitHub check-run on `ec664aa` says Cloudflare Pages completed/success at 11:31:25Z.
+  started_at == completed_at, so "build started 11:31:25" is really "success posted then". Operations'
+  11:30 read still predates it, so Builder's correction stands.
+- Feature `Status:` lines are all true. sync-engine is not-started and reconcile doesn't exist, which fits.
+- Badrish's brief was honoured: Mathematician sent before code, types verbatim, steps 1-2, step 3 booked.
+
+### Findings handed out (owners fix, I don't)
+1. Operations' notebook stops at 09-01, but it worked 09-06 (commit) and 09-16 (push, plus the premature
+   live check). Its own dead end is only in Builder's notebook. Owner: operations.
+2. The journal says "Pushed exactly `0e32dce..ec664aa`". In git notation that excludes 0e32dce
+   (6 commits). The real push was `9513dde..ec664aa`. It matters because Builder's new rule is to
+   phrase pushes as ranges. Owner: builder, in the next entry (append-only). Claude's brief has the same slip.
+3. Builder broke a gate he set himself. The 09-06 entry says the Mathematician's answer "must land
+   before the invariant is pinned in the contract suite". Step 2 pinned it about 20 minutes after sending,
+   before the answer came back. The answer confirmed the predicate and the cost was one function, so no harm.
+   But db90efa doesn't say the gate was overridden. Owner: builder notebook.
+4. The "41 unwritten sessions" count is wrong. The log appends a row every time the hook fires while the
+   journal is owed, and it's never pruned. The 6 builder rows on 09-06 came before its 21:24 entry, so
+   they're covered. The 35 designer rows cluster 09-01..09-06. There's a real gap on 09-02/03/04:
+   designer runs with no journal entry and no commit, and the Designer's "types" notebook entry is
+   dated 09-01 and says "owed for five sessions". What those runs did or failed to do isn't written.
+   Owner: builder/designer. The hook log growing forever is a tooling matter for Claude.
+5. Claude's marked notes to Builder (notebook correction, push-scope ambiguity) stayed inside review.
+   Both were record-honesty or Badrish-owned calls, went to Badrish rather than being settled privately,
+   and Builder verified with git himself. The only gap is attribution: the journal presents the scope
+   catch as Builder's alone. Minor.
+
+### Not a finding, don't re-raise
+- My 08-25 "check whether 10 shipped" was answered: live 09-01.
+- The Android wording was fixed at source in d6f1a10 with a lesson recorded. I missed it too across six sessions.
+- The mutation-testing on step 2 is real evidence. "Red first" can't be checked from git (test and impl
+  share a commit). Accept it unless a pattern appears.
+
+### For next time
+- Check in at each build step, not each chapter. Step 3 (reconcile) is the one the Mathematician's
+  lineage property has to land in as a real test. Confirm Gaps A/B/C exist as named tests.
+- Confirm Operations' notebook caught up.
+
 ## 2026-08-25 — first check, at the 7-tickets-closed / 0-code line
 
 Read: PHILOSOPHY/CLAUDE/LOGBOOK, JOURNAL, both feature files, designer + ui-ux notebooks,
