@@ -2,6 +2,30 @@
 
 Newest entry first. Append only.
 
+## 2026-09-16 (later) — the seven pushed; deploy verified, correcting Operations' first read
+**Worked:** builder, operations
+
+**Moved:**
+- **Pushed exactly `0e32dce..ec664aa`**, on Badrish's "all seven". Operations re-checked the range
+  before pushing, fast-forward `9513dde..ec664aa`, post-push `origin/main..main` empty.
+- **Deploy verified, but not by Operations' evidence.** Operations reported the live host serving
+  correctly at 11:30 UTC. The Pages build for `ec664aa` only *started* at 11:31:25, so that check
+  read the **previous** deploy. The bundle is functionally unchanged, so a 200 cannot tell the two
+  apart. Operations did flag the build status itself as unconfirmed, which was honest.
+- **What actually establishes it:** GitHub's public check-run on `ec664aa` from Cloudflare Pages is
+  `completed / success` ("Deployed successfully"), and the per-deployment URL it names
+  (`c2c138bc.note-maker-f41.pages.dev`) serves the same asset hashes (`index-DeYZaekR.js`,
+  `index-BXa1njak.css`) and a byte-identical `sw.js` as production, with `sw.js` as
+  `application/javascript`. The same content on both hosts is expected here and proves nothing on
+  its own. The proof is Cloudflare's success conclusion on this commit. Identical `sw.js` also
+  means no update bar will appear, as predicted.
+
+**Open:**
+- This entry's commit is local and **not** covered by "all seven".
+- `prompt` update bar still untested; step 3 is next (Day 4 prompt handed to Badrish).
+
+**Badrish:** "Builder - all seven."
+
 ## 2026-09-16 — Android install done; push scope put to Badrish, not decided; Day 4 prompt written
 **Worked:** builder
 

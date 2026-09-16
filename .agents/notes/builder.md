@@ -1,5 +1,17 @@
 # Builder's notebook — NoteMaker
 
+## 2026-09-16 (later) — "the site is up" is not "the deploy landed"
+
+After a push whose bundle doesn't change, checking the live host proves nothing. Operations checked
+at 11:30; the build started at 11:31:25. The old deploy passed every content check. Next time,
+ask for the proof that's tied to the commit before the content checks: GitHub's public
+`commits/<sha>/check-runs` (no `gh`, no auth needed) carries Cloudflare Pages' own conclusion and the
+per-deployment URL. Put that in the Operations brief up front.
+
+Also: I parked the journal entry waiting on a background poller "to arrive" and ended the turn.
+The coordinator was right to call it. When a result is seconds away, poll it inside the turn and
+don't hand the turn back. Don't park on a notification.
+
 ## 2026-09-16 — a push authorisation shaped by content, on a branch shaped by time
 
 Badrish authorised pushing "the documentation changes". Git doesn't push changes, it pushes a
