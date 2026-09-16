@@ -183,10 +183,11 @@ offering a reload; `updateSW()` on accept. Consequences worth stating rather tha
 
 > **Status, 2026-09-06: steps 0, 1 and 2 below are all done, and so is the live sign-in this ticket
 > exists to prove** (step 0 push 2026-08-27; connect and env vars 2026-09-01; sign-in confirmed by
-> Badrish 2026-09-06 — his assertion of a click, no agent has seen the uid render). The one physical
-> act left is adding the app to an Android homescreen from Chrome, which builds nothing: NoteMaker is
-> a PWA, there is **no `.apk` and no package of any kind**, and the map puts a native Play Store app
-> out of scope. Live state is tracked in `.agents/features/deploy-pipeline.md`; do not re-run the
+> Badrish 2026-09-06 — his assertion of a click, no agent has seen the uid render). **Updated
+> 2026-09-16: the Android homescreen install is done too**, via Chrome's Add to Home screen, and
+> sign-in works inside the installed app (Badrish's report). That act built nothing: NoteMaker is a
+> PWA, there is **no `.apk` and no package of any kind**, and the map puts a native Play Store app
+> out of scope. No physical act of Badrish's remains on this ticket. Live state is tracked in `.agents/features/deploy-pipeline.md`; do not re-run the
 > steps below.
 
 Corrected 2026-08-27: **the push comes first, and it was missing from this list.** Cloudflare Pages

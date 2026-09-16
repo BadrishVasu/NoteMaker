@@ -2,6 +2,43 @@
 
 Newest entry first. Append only.
 
+## 2026-09-16 — Android install done; push scope put to Badrish, not decided; Day 4 prompt written
+**Worked:** builder
+
+**Moved:**
+- **Every Badrish-owned act on step 0 is now closed.** He installed NoteMaker via Chrome's Add to
+  Home screen, and Google sign-in works inside the installed app. Recorded on `deploy-pipeline.md`
+  and ticket 10 with provenance — his report of acts on his own device, no agent has seen either.
+  The in-app sign-in is the more valuable half: it is the origin-split proof repeated in standalone
+  display mode, where the app will actually live. One box left on step 0, the `prompt` update bar,
+  and it is not his — an agent can observe it once a deploy changes the precache.
+- **Push authorised for "the documentation changes" — and not executed, because that scope cannot
+  be honoured literally.** `origin/main..main` is **six** commits, not the five the coordinator and
+  my own last entry counted: `0e32dce` was also local. `main` is linear, so the docs-only commits
+  (`0e32dce`, `db90efa`, `d6f1a10`, this one) cannot reach `origin` without the code commits between
+  them (`3d705a2`, `9e39b82`, and `333fff6`'s comment edits) — except by rewriting local history,
+  which is not a documentation push either. Widening his word or narrowing it are both his calls,
+  so it went to him with my recommendation rather than to Operations. **Operations was not invoked.**
+- **Pre-flighted the full range so his answer is the only thing left:** typecheck 0, lint 0, 119/119
+  tests, production build clean; no credential shape anywhere in `git diff origin/main..main`; and
+  nothing the app entry imports touches `src/domain` or `src/store` (only the import-boundary test
+  does), and `fake-indexeddb` is a devDependency — so pushing the code changes nothing a user sees,
+  and the resulting Pages deploy should not produce an update bar either.
+- **Day 4 prompt written** and handed to Badrish in my block; it is not committed, since it is a
+  message to paste rather than a record.
+
+**Open:**
+- **The push, pending Badrish's answer on scope.** If he widens it to all of `origin/main..main`,
+  hand Operations exactly that range, pre-flight above, fast-forward only. If he holds it to docs
+  only, only `0e32dce` can go without a history rewrite — say so, don't improvise.
+- Step 3 is next: `domain/reconcile` + `applySnapshot` + `conflictCopy`, with the per-rev content
+  fixture, the lineage assertion, and Gaps A/B/C as regression tests (`features/sync-engine.md`).
+- `prompt` update bar: first testable on a deploy that changes the precache, which step 6 will be.
+
+**Badrish:** "I installed Notemaker to my phone via Chrome's add to home screen. The google sign on
+works there as well. You may get operations to push the documentation changes. Then prepare the
+prompt for NoteMaker Day 4 if we are done and we can wrap things up for this chat."
+
 ## 2026-09-06 (fourth) — the live sign-in is done; the record said otherwise, and the Android wording caused it
 **Worked:** builder
 

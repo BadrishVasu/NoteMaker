@@ -100,7 +100,14 @@ Chrome's own Add to Home screen acting on the manifest already served by the liv
       `auth/popup-blocked` from the automation browser — an artifact of that browser, not the deploy;
       worth keeping because the app handled it correctly, rendering the friendly message plus the
       error code.
-- [ ] **Added to an Android homescreen from Chrome** — Badrish's, because it needs a real device.
+- [x] **Added to an Android homescreen from Chrome** — **Badrish, 2026-09-16: done**, via Chrome's
+      Add to Home screen, and **Google sign-in works inside the installed app too**. Same provenance
+      as the sign-in box above: his report of acts on his own device, not an agent observation — no
+      agent has seen the installed app or its uid. The second fact matters beyond the first: the
+      installed app runs in standalone display mode, where popup-based sign-in is a known place for
+      auth flows to break, so this is the origin-split proof repeated in the context the app will
+      actually live in. The rest of this box is kept as the record of what the act is.
+      Badrish's, because it needs a real device.
       **This is not a packaging step and produces no artifact:** the act is opening
       `https://note-maker-f41.pages.dev/` in Chrome on Android and accepting the install prompt, or
       ⋮ → *Add to Home screen*. Nothing is built, downloaded, signed or sideloaded, and there is no
@@ -144,7 +151,8 @@ Chrome's own Add to Home screen acting on the manifest already served by the liv
   ticket 04.
 
 ## Open questions
-None open as of 2026-09-06. Note this does not mean the feature is finished: two items in `State`
-are still unchecked — adding the app to the Android homescreen, and exercising the `prompt` update
-bar on the next deploy. Those are pending *actions*, not unanswered questions. (The third,
-end-to-end sign-in, closed 2026-09-06 on Badrish's word.)
+None open as of 2026-09-16. Note this does not mean the feature is finished: one item in `State` is
+still unchecked — exercising the `prompt` update bar, which cannot happen until a deploy changes what
+the service worker precaches. It is **not** Badrish-only: an agent can observe a waiting worker from a
+browser. Every Badrish-owned act on step 0 is done (sign-in closed 2026-09-06, the Android install
+and in-app sign-in 2026-09-16, both on his word). Status stays `in-progress` for that one box.

@@ -1,5 +1,28 @@
 # Builder's notebook — NoteMaker
 
+## 2026-09-16 — a push authorisation shaped by content, on a branch shaped by time
+
+Badrish authorised pushing "the documentation changes". Git doesn't push changes, it pushes a
+commit and everything under it, and `main` interleaves docs and code. So the natural-language scope
+and the mechanical unit don't line up, and the tempting move is to pick whichever reading makes the
+push go through. Didn't. Both readings change what lands on a public repo, and that is his.
+
+Two things to remember:
+
+- **I miscounted my own unpushed commits** — wrote "four" last entry, the coordinator said five,
+  it's six. I was counting from recall of the session list rather than `git log origin/main..main`.
+  Same lesson as grep-over-recall, in git form: *count with the tool, every time a number goes on
+  the record.*
+- **Prevention, not just handling:** commit order can't fix this — docs committed after code still
+  sit on top of it, and pushing them pushes the code. The fix is on the asking side: whenever I
+  close a session with unpushed work, the journal lists `origin/main..main` by hash with a
+  docs/code tag on each, so any push Badrish authorises is already phrased as a range. I am not
+  proposing a docs branch — two histories to keep straight for a one-person project.
+
+Dead end, don't re-walk it: cherry-picking the docs commits onto `origin/main` and pushing that.
+It "honours the scope" but leaves local `main` diverged from `origin`, and the next push is a
+rebase or a merge on a public branch. That's a history rewrite by another name.
+
 ## 2026-09-06 (fourth) — a checkbox's *wording* cost Badrish a round trip
 
 Badrish asked me for an `.apk`. There is no `.apk`; there never will be. He asked because a checkbox
