@@ -1,5 +1,23 @@
 # Builder's notebook — NoteMaker
 
+## 2026-09-17 (later) — three slips, one shape: I wrote a number from a list, not from the tool
+
+The mutant count (wrote nine, listed ten) and the push range (`0e32dce..ec664aa` for a seven-commit
+push) are the same failure as the 09-16 miscount. I produced the figure by reading my own list
+instead of asking git or the test runner. I already had the lesson ("count with the tool") and
+repeated it anyway, because I applied it to *counts* and not to *ranges*. So, concretely:
+- A range is `$(git rev-parse --short origin/main)..$(git rev-parse --short HEAD)`, pasted,
+  never typed from the oldest commit's hash.
+- A mutant or test count in the record is copied from runner output produced after the last change.
+
+Also: I edited `architecture.md` myself at step 3 without telling the Designer. The edits were
+correct and he kept them, but the Overseer is right that the owner has to know. A correct edit to
+someone else's document still goes through them first, because a silent fix is how the doc ended up
+contradicting itself two rows further down, where I didn't look.
+
+Operations: the missing notebook entry was mine to arrange. I launched Operations on 09-16 without
+asking for the entry. Every future Operations brief ends with "write your notebook entry".
+
 ## 2026-09-17 — step 3: a green property suite is a claim about what it can see
 
 My first harness asserted lineage, P-INV and convergence, and it was green. The mutants were what

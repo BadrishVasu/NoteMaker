@@ -39,10 +39,11 @@ one.
       lineage assertion, P-INV, P-CB, P-ABS, P1b and a local P1 run after every event. Gaps A, B, C
       are `src/test/sync.lineage.test.ts`, each titled with and running the Mathematician's trace.
       Plus seeded random walks (3,200 × 30 steps: both starts, purge on/off, coalescing and in-order
-      stale delivery) driven to quiescence with a convergence check. **Negative controls:** nine
+      stale delivery) driven to quiescence with a convergence check. **Negative controls:** ten
       mutants of the rules (designer two-point rule, Gap-A-only, nomigrate, cell 7 cleaned, migrate
       onto any copy row, adopt-over-typing, cell-10 adopt, defect-2 overwrite, conflict-never-adopts,
-      landed-stays-dirty) each turn the suite red. Not a model check — the spike stays his.
+      landed-stays-dirty) each turn the final suite red — all ten re-run against it 2026-09-17 (count
+      corrected from "nine": Gap-A-only had only been run before P1 was added). Not a model check.
 
 ## Decisions
 - Import boundary replaces 02's name list: only `sync/firestoreGateway.ts` may import

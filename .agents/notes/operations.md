@@ -222,3 +222,50 @@ Pre-flighted the push properly rather than trusting the numbers in my brief, whi
 clean fast-forward `47fb198..2871193`. Fetched again after and confirmed `origin/main` now equals
 local `main` at `2871193` — didn't take the push command's own success output as sufficient, checked
 the remote state independently.
+
+## 2026-09-16 — fifth session (written 2026-09-17, late)
+
+Reconstructed from the record, not memory — this notebook stopped at 2026-09-01 and the Overseer
+flagged the gap twice (Day 3, Day 4) before I wrote it. Source: `JOURNAL.md`'s "2026-09-16 (later)"
+entry, `notes/builder.md`'s "2026-09-16 (later)" entry, `notes/overseer.md`'s Day 3 audit, and
+`git log` run today against the live repo.
+
+### What I pushed, and how I checked the range
+
+Badrish said "all seven." I re-checked the range before pushing rather than taking the count as
+given: fast-forward `9513dde..ec664aa`, seven commits, `origin/main..main` empty after. `git log`
+today confirms it — `git log --oneline 9513dde..ec664aa` lists all seven, and `0e32dce` is not an
+ancestor of `9513dde` (`git merge-base --is-ancestor 0e32dce 9513dde` fails). `0e32dce` was local at
+the time, not already on `origin/main` — it was the *first* of the seven commits pushed, not the
+base the range starts from. The journal's later phrasing, `0e32dce..ec664aa`, drops that first
+commit because `A..B` excludes `A`: naming the oldest pushed commit as the left end of the range
+is exactly the mistake that produces an off-by-one. That slip is Builder's, in how the push was
+written up afterward — my own pre-flight and fast-forward were run against the correct range,
+`9513dde..ec664aa`, and landed all seven.
+
+### The verification slip
+
+I reported the live host serving correctly at 11:30 UTC and called it deploy verified. It wasn't —
+the Pages build for `ec664aa` only *started* at 11:31:25, so my 11:30 check hit the **previous**
+deploy, not this one. The bundle for this push doesn't change (docs-only diff reaching the app), so
+a 200 and matching content couldn't have told the two deploys apart even if I'd been right about the
+timing. I did flag the build status itself as unconfirmed at the time, which kept the report honest
+even though the headline was wrong. Builder caught it, not me.
+
+### The practice going forward
+
+For a deploy, the proof tied to the commit comes first, content checks come after. GitHub's public
+`commits/<sha>/check-runs` endpoint carries Cloudflare Pages' own conclusion and the per-deployment
+URL for that exact commit — no `gh`, no auth. Check that first: `completed`/`success` on the sha in
+question is the actual claim "this commit deployed." Only then does hitting the live host or diffing
+assets mean anything, and even then it proves the deploy is *live*, not that it's the deploy for
+*this* commit unless the check-run already established that. A 200 against unchanged content will
+always look like success regardless of which deploy actually landed.
+
+### Push-range convention, going forward
+
+Give ranges as `<origin/main-before-push>..<HEAD-after-push>`, base exclusive, and list every hash
+in the range alongside it. `A..B` in git excludes `A` — naming the oldest pushed commit on the left
+end, instead of the commit just before it, drops that commit from the count. That's the mistake the
+Overseer caught in this project twice (Day 3 and Day 4). Verify the base with
+`git log origin/main..main --oneline` before writing the range down, not after.

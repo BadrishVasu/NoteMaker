@@ -230,6 +230,10 @@ wrote the comment describing the concept and the body implementing the type, in 
 re-read one against the other. A doc comment that contradicts its signature is a cheap class of bug
 to catch and I did not catch it.
 
+### 2026-09-17 — architecture.md reconciled to step 3's `commitPush` move (record only, no decision changed)
+
+Overseer caught the doc contradicting itself: table rows still put `PushOutcome` application in `engine.ts` after Builder moved it to pure `commitPush`. Fixed those plus four stale spots the grep turned up (port sketch, the `decide`-gets-`lastServerState` paragraph, `ServerState`'s `Pick` shape, the fallback sentence); kept Builder's three edits as written. Lesson: my port sketch named a `PushOutcome` type nobody ever defined — an undefined name in a design doc is a placeholder, and it drifted exactly as one would.
+
 ### Testable seams I named for the Builder and for ticket 09
 
 `NoteStore` port (contract suite run against a fake and against `idb` — this is how 09 gets a second

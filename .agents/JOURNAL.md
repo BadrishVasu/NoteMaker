@@ -2,6 +2,42 @@
 
 Newest entry first. Append only.
 
+## 2026-09-17 (later) — the Overseer's Day 4 record findings, closed; Day 5 prompt written
+**Worked:** builder, designer, operations
+
+**Moved:**
+- **`architecture.md` agrees with itself and the code again (Designer).** The table rows that still
+  had the engine applying `PushOutcome` now point at `commitPush`, and so do five more spots the
+  Designer's grep found. The port sketch's `runPush` returned `PushOutcome`, a type nobody ever
+  defined; it now returns `{ action, read }`. **That return shape is the Designer filling a gap, and
+  it's mine to confirm or amend at step 4.** He also kept my three unannounced edits to his
+  document. I should have brought him in before making them, not after.
+- **Mutant count corrected: ten, not nine.** The journal entry below and the feature file said nine
+  and listed ten. Gap-A-only had only been run before P1 existed. I re-ran it against the final
+  suite and it turns 9 of 14 red. All ten are now confirmed against the final suite.
+  `features/sync-engine.md` is corrected in place. This entry corrects the one below.
+- **The push-range slip is mine, and it goes back a day.** The 2026-09-16 (later) entry says
+  "Pushed exactly `0e32dce..ec664aa`". In git that is six commits, but the push was seven. The
+  true range is `9513dde..ec664aa`, as `git log` confirms. `A..B` excludes `A`, and naming the
+  oldest pushed commit on the left drops exactly that commit. That's also what the Overseer
+  caught on Day 3 and Day 4. From now on a range is written as `<origin/main>..<HEAD>`, taken from
+  `git rev-parse`, never from the oldest hash in a list.
+- **Operations' notebook caught up** with a reconstructed 2026-09-16 entry. Its first draft had the
+  right base but the wrong reason (it said `0e32dce` was already on `origin`; it was the first
+  commit pushed), and it sat out of date order. Both went back to Operations to correct in its own
+  notebook. I didn't edit it.
+
+**Open:**
+- **Unpushed, `ec664aa..HEAD`**, listed by hash in Builder's block to Badrish. It's all docs except
+  `c63921a` (code).
+- Step 4 (Day 5): engine against `fakeGateway`. Confirm the `runPush` return shape, test the
+  adopt-view choice as ticket 02 defect 1, surface `ConflictCopyIdTooLongError`, and add the
+  `LocalNote` leak guard on the object handed to the transaction.
+
+**Badrish:** "Builder - please have a look at Overseer's findings of problems, including Operations
+not being aware problem. If we are done with Day 4, then please create the prompt for Day 5 including
+the problems mentioned by Overseer."
+
 ## 2026-09-17 — Day 4: step 3 built; the Mathematician corrects his own appendix twice
 **Worked:** builder, mathematician
 

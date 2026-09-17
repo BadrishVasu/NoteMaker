@@ -26,24 +26,25 @@ shape: pure decision logic, no I/O. So the port is shaped to make that possible:
 
 ```ts
 // sync/remoteGateway.ts — the port. This file imports nothing from firebase.
-type PushAction =
-  | { kind: 'noop' }                                     // already landed
-  | { kind: 'write'; doc: NoteDoc }                      // clean push
-  | { kind: 'adopt' }                                    // fast-forward / delete-lost
-  | { kind: 'conflictCopy'; copyId: string; copy: NoteDoc }
+// PushAction, TransactionRead and Flight are defined in domain/reconcile.ts (step 3, landed) —
+// not restated here. PushAction: write (clean/create/recreate) | landed | adopt | conflictCopy.
 
 interface RemoteGateway {
   subscribeNotes(uid: string, onDocs: (docs: NoteDoc[]) => void): Unsubscribe
   runPush(
     uid: string,
-    noteId: string,
-    decide: (server: NoteDoc | null) => PushAction,   // ← ticket 02's reconcile, pure
-  ): Promise<PushOutcome>
+    flight: Flight,                                          // reads {flight.noteId, flight.copyId}
+    decide: (read: TransactionRead) => PushAction,           // ← reconcile's `decide`, flight closed over
+  ): Promise<{ action: PushAction; read: TransactionRead }>  // the committed attempt's, not a retried one's
 }
 ```
 
-`decide` **is** `domain/reconcile.ts`. The Firestore implementation runs it inside
-`runTransaction` and translates the returned `PushAction` into `transaction.set` calls. The fake
+`decide` **is** `domain/reconcile.ts`'s `decide`. The Firestore implementation runs it inside
+`runTransaction` and translates the returned `PushAction` into `transaction.set` calls. It returns
+the committed attempt's action *and* read, because the engine needs both after the transaction:
+the action for `commitPush`, the read as the adopt view before `initialSyncCompletedAt` (02 defect
+1). *(Return shape reconciled 2026-09-17 to what `commitPush` consumes; the earlier sketch named an
+undefined `PushOutcome`. The gateway is step 4 — the Builder confirms or amends it there.)* The fake
 implementation runs it against an in-memory `Map` with a hook that lets a test interleave a second
 device between the read and the write. **Ticket 09 gets its second device as a second engine
 instance, not a second browser** — which is the difference between sync tests that run in
@@ -88,8 +89,10 @@ src/
     remoteGateway.ts   the port (above)
     firestoreGateway.ts  ONLY file importing firebase/firestore
     fakeGateway.ts       in-memory server with interleaving hooks
-    engine.ts            the loop; owns backoff, owns lastServerState (below); consults no clock,
-                          no navigator.onLine
+    engine.ts            the loop; owns backoff, owns lastServerState (below), the per-Note in-flight
+                          gate, and the choice of adopt view it hands commitPush; applies the
+                          RowWrite[] that domain/ returns and derives none itself; consults no
+                          clock, no navigator.onLine
     lastServerState.ts   Map<noteId, NoteDoc> (whole doc — corrected 2026-09-17), in-memory only —
                           ratified below, this is new since 03 closed
     corpus.ts            in-memory whole corpus + subscribe(); the UI's single read surface
@@ -127,10 +130,12 @@ case the map exists to fix. Persisting it would be state that can silently go st
 restart for no benefit `store/` doesn't already provide by other means; keeping it in memory means
 it is always either correct or freshly empty, never wrong.
 
-Consequence for the module table below: `firestoreGateway.runPush`'s `decide` callback closes over a
-snapshot of the relevant `lastServerState` entry at call time (still pure — the map read happens in
-`engine.ts`, the decision function itself receives it as an argument), matching the appendix's
-"fall back to the transaction read only while `initialSyncCompletedAt` is unset" rule.
+Consequence for the module table below: the map read happens in `engine.ts`, and the pure function
+receives the entry as an argument. **Corrected 2026-09-17:** that function is `commitPush`, not
+`decide` — `decide` reads only the transaction; the server view is needed where a row *adopts*, which
+is local bookkeeping after the transaction. The engine passes `commitPush` the `lastServerState`
+entry, or the transaction read while `initialSyncCompletedAt` is unset (the appendix's fallback
+rule); `commitPush` does not know which it got.
 
 ## Data flow — one direction each way
 
@@ -151,10 +156,10 @@ a crash between the two loses a re-render, never a keystroke.
 | Constraint | Owner in this architecture |
 |---|---|
 | 02: every Note write via `runTransaction` | `firestoreGateway.runPush`, the sole firebase importer |
-| 02: `baseRev` only advances to a rev the listener delivered (clean) or this device pushed | `engine.ts`, applying `PushOutcome` per the appendix's 14-cell table |
+| 02: `baseRev` only advances to a rev the listener delivered (clean) or this device pushed | Listener: `domain/applySnapshot.ts` (the 14-cell table). Push: `domain/reconcile.ts` `commitPush` (pure → `RowWrite[]`). `engine.ts` applies both, deriving neither (moved 2026-09-17, `sync-engine.md` Decisions) |
 | 02: snapshots never overwrite a dirty body, but do always record `lastServerState` | `domain/applySnapshot.ts` (pure), `sync/lastServerState.ts` (in-memory, owned by `engine.ts`) |
 | 02 appendix: copy id/rev keyed off the flight token, not existence+pristine | `domain/conflictCopy.ts` |
-| 02 appendix: Outbox slot migrates only onto the copy this push just wrote | `engine.ts`, applying `PushOutcome.conflictCopy` |
+| 02 appendix: Outbox slot migrates only onto the copy this push just wrote | `domain/reconcile.ts` `commitPush`, `conflictCopy` case; `engine.ts` applies the writes (moved 2026-09-17) |
 | 02 appendix: per-Note pushes parallelise freely; one in-flight push per Note | `engine.ts` — a `Map<noteId, Promise>` gate, nothing more |
 | 02: editor follows the content, not the id | `corpus.ts` emits a redirect event; `Editor` does `history.replaceState` (05 §conflict redirect) |
 | 03: whole corpus in memory, no queries | `corpus.ts`; `projection.ts` filters arrays |
@@ -550,8 +555,12 @@ export interface LocalNote extends NoteDoc {
   baseContent: ForkPoint | null
 }
 
-/** In-memory only, owned by `sync/engine.ts`, never persisted (02 appendix, defect 1). */
-export type ServerState = ForkPoint & Pick<NoteDoc, 'rev' | 'deletedAt'>
+/** One `lastServerState` entry. In-memory only, owned by `sync/engine.ts`, never persisted
+ *  (02 appendix, defect 1). The whole document — corrected 2026-09-17 from
+ *  `ForkPoint & Pick<NoteDoc, 'rev' | 'deletedAt'>`: an adopted row needs `createdAt`,
+ *  `updatedAt`, `conflictOf` and `conflictBase`, and the narrow shape dropped a copy's
+ *  `conflictBase` on adopt. */
+export type ServerState = NoteDoc
 
 // ── The one serialisation boundary ────────────────────────────────────────────
 
@@ -627,7 +636,8 @@ added, which is exactly how it missed three of them. Stated once, against the st
 > **`baseContent := the content that was in flight` at every point where `baseRev := flightRev` and
 > the row remains dirty; `baseContent := null` at every point where the row becomes clean.**
 
-Expanded into the three places the engine touches it:
+Expanded into the three places it is set — point 1 in `domain/edit.ts`, points 2 and 3 in
+`domain/reconcile.ts` `commitPush` (all pure; the engine only applies the resulting writes):
 
 1. **Clean → dirty** (first keystroke, or first delete, on a clean row): `baseContent := the row's
    content before the edit`. Unchanged from the original. A clean row always has `baseRev !== null`
@@ -677,8 +687,9 @@ event unconditionally, and `applySnapshot` is specified as a **14-cell table ove
 than as a list of branches, which is structurally immune to a branch being added later. That table
 is the antidote, and it is the form to prefer for any rule added to this design from here. Two
 narrower rules key off a *condition* rather than a branch and are fine as written: `toLocalNote` is
-valid only for an insert into an absent row (decision #8), and `decide` falls back to the
-transaction read only while `initialSyncCompletedAt` is unset.
+valid only for an insert into an absent row (decision #8), and the adopt view `commitPush` receives
+falls back to the transaction read only while `initialSyncCompletedAt` is unset (was "`decide`
+falls back"; corrected 2026-09-17 — the engine chooses the view, `commitPush` consumes it).
 
 **This amends ticket 03's "the mirror row is 01's shape plus `baseRev`, `pendingRev`, and nothing
 else."** It does not touch the wire document, the rules, the three equality tests, or the snapshot
@@ -726,8 +737,8 @@ overturning now if they are wrong.
 6. **`ForkPoint` is one type used three ways** rather than three structurally-identical interfaces.
    `conflictBase`, `baseContent` and the content half of `ServerState` are the same three fields
    because they are the same concept, and giving them one name is what makes `sameContent` usable
-   against all of them. `ServerState` derives `rev`/`deletedAt` by `Pick` so it cannot drift from
-   `NoteDoc`.
+   against all of them. `ServerState` is `NoteDoc` itself, so it cannot drift from it (it was a
+   `Pick` of `rev`/`deletedAt` until 2026-09-17 — too narrow; see the type's comment).
 7. **No `sendRequested` field on the row.** 02's manual-send amendment contemplated "a client-only
    'send requested since last dirty' bit"; the Builder's later trigger policy made `Sync Now` a
    *global* wake source rather than a per-Note affordance, which removes the need entirely. If a
