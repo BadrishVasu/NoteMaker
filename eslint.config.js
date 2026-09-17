@@ -62,6 +62,13 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
 
+  // scripts/ is plain Node tooling (npm script wrappers), not app code — outside src/, and it
+  // needs Node globals (process, console) that the browser-scoped config below doesn't provide.
+  {
+    files: ['scripts/**/*.mjs'],
+    languageOptions: { ecmaVersion: 2022, globals: globals.node, sourceType: 'module' },
+  },
+
   {
     files: ['src/**/*.{ts,tsx}'],
     languageOptions: { ecmaVersion: 2022, globals: globals.browser },

@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:emulator": "firebase emulators:exec --only firestore --project demo-notemaker \"vitest run --config vitest.emulator.config.ts\"",
+    "test:emulator": "node scripts/runEmulatorTests.mjs",
     "test:all": "npm run test && npm run test:emulator",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
