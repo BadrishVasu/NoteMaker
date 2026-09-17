@@ -102,8 +102,9 @@ const adopt = (id: NoteId, server: ServerState | null): RowWrite =>
 
 /**
  * @param server the view to adopt noteId from: the `lastServerState` entry (null = gone),
- *   or the transaction's read while `initialSyncCompletedAt` is unset (02 defect 1). The
- *   engine chooses; this function does not know which it got.
+ *   or the transaction's read until the engine's listener has applied a complete batch THIS
+ *   session (02 defect 1; the persisted `initialSyncCompletedAt` does not decide it — ruled
+ *   2026-09-17). The engine chooses; this function does not know which it got.
  */
 export function commitPush(flight: Flight, action: PushAction, local: LocalRowsNow, server: ServerState | null): RowWrite[] {
   const cur = local.row

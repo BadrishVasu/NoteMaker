@@ -106,3 +106,31 @@ describe('domain/ purity', () => {
     expect(hasRestrictedImport(messages)).toBe(false)
   })
 })
+
+describe('sync/engine.ts consults no clock and never reads navigator.onLine', () => {
+  // Time reaches the engine as an injected Clock; connectivity as snapshot delivery (02).
+  const restrictedGlobal = (messages: string[]) => messages.some((m) => m.startsWith('no-restricted-globals'))
+
+  it.each([
+    ['Date.now()', 'export const t = Date.now()\n'],
+    ['new Date()', 'export const t = new Date()\n'],
+    ['setTimeout', 'export const t = setTimeout(() => undefined, 1)\n'],
+    ['clearTimeout', 'export const t = () => clearTimeout(1)\n'],
+    ['setInterval', 'export const t = setInterval(() => undefined, 1)\n'],
+    ['performance.now()', 'export const t = performance.now()\n'],
+    ['navigator.onLine', 'export const t = navigator.onLine\n'],
+  ])('rejects %s in engine.ts', async (_, source) => {
+    expect(restrictedGlobal(await messagesFor('src/sync/engine.ts', source))).toBe(true)
+  })
+
+  it('also rejects globalThis.navigator and window.setTimeout — the obvious ways round it', async () => {
+    const messages = await messagesFor('src/sync/engine.ts', 'export const a = globalThis.navigator.onLine\nexport const b = window.setTimeout\n')
+    expect(messages.filter((m) => m.startsWith('no-restricted-properties'))).toHaveLength(2)
+  })
+
+  // Negative control: the rule is scoped to the engine, not to sync/ or the app.
+  it('allows setTimeout outside engine.ts, where the real Clock is built', async () => {
+    const messages = await messagesFor('src/platform/clock.ts', 'export const t = setTimeout(() => undefined, 1)\n')
+    expect(restrictedGlobal(messages)).toBe(false)
+  })
+})

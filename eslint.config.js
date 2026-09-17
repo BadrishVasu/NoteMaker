@@ -103,6 +103,32 @@ export default tseslint.config(
     },
   },
 
+  // sync/engine.ts consults no clock and never reads navigator.onLine: time arrives as an
+  // injected Clock (so ticket 09's tests drive it by hand), connectivity as snapshot delivery.
+  {
+    files: ['src/sync/engine.ts'],
+    rules: {
+      'no-restricted-globals': [
+        'error',
+        ...['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'performance'].map((name) => ({
+          name,
+          message: 'sync/engine.ts consults no clock. Use the injected deps.clock.',
+        })),
+        { name: 'navigator', message: 'sync/engine.ts never reads navigator.onLine; snapshot delivery is the connectivity oracle (02).' },
+      ],
+      'no-restricted-properties': [
+        'error',
+        ...['globalThis', 'window', 'self'].flatMap((object) =>
+          ['navigator', 'Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'performance'].map((property) => ({
+            object,
+            property,
+            message: 'sync/engine.ts consults no clock and never reads navigator. Use deps.clock.',
+          })),
+        ),
+      ],
+    },
+  },
+
   // Tests and the fakes themselves are the only things allowed to import a fake.
   {
     files: ['src/**/*.test.{ts,tsx}', 'src/**/fake*.ts', 'src/**/memory*.ts', 'src/test/**/*.ts'],

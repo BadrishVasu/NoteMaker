@@ -347,6 +347,39 @@ for (const harness of harnesses) {
         expect((await store.get(a.id))?.body).toBe('edited')
       })
 
+      // Step 4: the engine's commit reads a row and writes a row derived from it, while the
+      // editor may be saving the same row. IndexedDB serialises overlapping readwrite
+      // transactions; a fake that interleaves them would lose the user's keystroke in a
+      // test and hide or invent engine bugs.
+      it('serialises overlapping transactions — a read-modify-write is never interleaved', async () => {
+        const a = cleanRow({ body: '' })
+        await store.put(a)
+        const appendBang = () =>
+          store.runInTransaction(async (tx) => {
+            const read = await tx.get(a.id)
+            await tx.getAll() // a second request between the read and the write
+            await tx.put({ ...a, body: `${read?.body ?? ''}!` })
+          })
+        await Promise.all([appendBang(), appendBang(), appendBang()])
+        expect((await store.get(a.id))?.body).toBe('!!!')
+      })
+
+      it('keeps serialising after a transaction throws', async () => {
+        const a = cleanRow({ body: '' })
+        await store.put(a)
+        const failing = store.runInTransaction(async (tx) => {
+          await tx.put({ ...a, body: 'rolled back' })
+          throw new Error('boom')
+        })
+        const after = store.runInTransaction(async (tx) => {
+          const read = await tx.get(a.id)
+          await tx.put({ ...a, body: `${read?.body ?? ''}ok` })
+        })
+        await expect(failing).rejects.toThrow('boom')
+        await after
+        expect((await store.get(a.id))?.body).toBe('ok')
+      })
+
       it('exposes getAll inside the transaction', async () => {
         const a = cleanRow()
         await store.put(a)
