@@ -1,5 +1,23 @@
 # Operations' notebook — NoteMaker
 
+## 2026-09-17 — eighth session: pushing the Day 6 close-out, one commit
+
+Same job as the seventh session, one commit later: range pre-approved by Badrish,
+`5ba2a8acea27b840bd7df7798b0e5c57106f2bf5..59e96abfe6ad322803c0d4542a4b3416858e2bd9`, a single
+docs commit (`59e96ab`, Day 6 close-out journal entry plus the Day 7 prompt). Checked
+`git rev-parse HEAD` (`59e96ab...`) against `origin/main` (`5ba2a8a...`) before touching push —
+matched the brief exactly, so no need to stop and report a mismatch. Pushed by SHA
+(`git push origin 59e96ab...:main`), fast-forward, no force. Re-fetched, `origin/main` landed at
+`59e96ab...`.
+
+Fast-forwarded the main checkout the same way as last time: `git status --short` empty first,
+then `merge --ff-only 59e96ab...` — succeeded, brought in `JOURNAL.md`, `notes/builder.md`,
+`notes/operations.md` (my own seventh-session entry, now present in the main checkout), and the
+new `.agents/prompts/day-7.md`. `main` and `origin/main` both confirmed at `59e96ab...` afterward.
+`git branch --no-merged main` in the main checkout printed nothing. Didn't touch the Firebase CLI,
+didn't commit anything myself, didn't delete any worktree or branch — exactly the four things the
+brief said were out of scope.
+
 ## 2026-09-17 — seventh session: pushing the logbook-gate false-alarm record
 
 Brought in for exactly one push, range and SHAs handed to me pre-approved by Badrish:

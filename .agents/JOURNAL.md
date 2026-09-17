@@ -2,6 +2,27 @@
 
 Newest entry first. Append only.
 
+## 2026-09-17 (Day 6, closed) — close-out pushed; Day 6 is done
+**Worked:** builder, operations
+
+**Moved:**
+- **Pushed `5ba2a8a..59e96ab`** (1 commit, docs — the Day 6 close-out entry below plus
+  `.agents/prompts/day-7.md`), on Badrish's word given through AskUserQuestion. Operations pushed by
+  SHA, verified `origin/main` at `59e96abfe6ad322803c0d4542a4b3416858e2bd9`, then fast-forwarded the
+  main checkout with `--ff-only`. `git branch --no-merged main` is empty — nothing is left unmerged.
+  `.agents/prompts/day-7.md` is confirmed present in the main checkout.
+- **Day 6 is closed.** Everything written this day is on `origin/main` except this entry and
+  Operations' notebook entry, committed here.
+
+**Open:**
+- **The Firestore rules deploy**, still blocked on Badrish running `firebase login`. Unchanged from
+  the entry below: deploy must name the project explicitly (`--project <ticket 04's project id>`),
+  since there is no `.firebaserc`.
+- **Unpushed:** this entry's commit. Badrish's approval covered an exact range and does not extend
+  to it.
+- **Cleanup** of the Day 6 worktree, the branch `claude/notemaker-day6-step5-d35669`, and the two
+  empty leftover folders — it needs this session to end first, and it is step 1 of the Day 7 prompt.
+
 ## 2026-09-17 (Day 6, end of session) — rules deploy blocked on login; logbook push done; hook fix applied
 **Worked:** builder, operations
 
