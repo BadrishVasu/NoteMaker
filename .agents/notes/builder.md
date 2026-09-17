@@ -1,5 +1,22 @@
 # Builder's notebook — NoteMaker
 
+## 2026-09-17 (Day 6, end) — a green go-ahead I still couldn't execute
+
+Badrish said deploy the rules, and I couldn't: no authorised Firebase account on this machine.
+The right move was to stop at the login wall and hand it back, not to reach for a token, and not
+to let the blocked item hold up the push, which was a separately approved range with no dependency
+on the deploy. **A blocked item blocks itself, not the session** — check whether the rest of the
+order actually depends on it before parking everything.
+
+Worth keeping for next time: without `.firebaserc`, `firebase deploy` targets whatever project the
+CLI last used. Any deploy command I write down names `--project` explicitly. The project id lives
+in ticket 04; it's an id, not a credential, so it's fine in a committed file — the key next to it
+is not.
+
+From Day 7 on there are no worktrees (Badrish). The session-start pair stays either way:
+`git branch --no-merged main` plus `git log --branches --not origin/main`. With one checkout the
+second is the one that matters.
+
 ## 2026-09-17 (Day 6, after close) — a journal write mid-conflict counts as an entry
 
 If a cherry-pick or merge conflicts on `JOURNAL.md` while I run in the background, the logbook gate

@@ -2,6 +2,39 @@
 
 Newest entry first. Append only.
 
+## 2026-09-17 (Day 6, end of session) — rules deploy blocked on login; logbook push done; hook fix applied
+**Worked:** builder, operations
+
+**Moved:**
+- **Firestore rules deploy: not done, blocked on Badrish.** He gave the word, and the tests are
+  green — 715 unit tests in 14 files, 72 emulator tests in 4 files, all passing. But the Firebase
+  CLI on this machine has no authorised account (`firebase login:list` → "No authorized accounts"),
+  and signing in is his, not an agent's. Nothing was deployed. The command, when he has logged in,
+  must name the project explicitly (`--project <ticket 04's project id>`) — there is no `.firebaserc`
+  and a bare `npm run rules:deploy` would go to whatever project the CLI has active.
+- **Pushed `8d83bea..5ba2a8a`** (2 commits, both docs) via Operations, by SHA, on Badrish's word.
+  `origin/main` and local `main` are both at `5ba2a8acea27b840bd7df7798b0e5c57106f2bf5`.
+  `git branch --no-merged main` in the main checkout is empty.
+- **Correction to the entry below:** the logbook-hook fix is **applied**, not "awaiting Badrish".
+  The `.live.<agent_id>` markers and the `.since` roll-forward at SubagentStart are live in
+  `~/.claude/hooks/` with the Overseer's changes (the previous versions are backed up alongside).
+  9/9 on the Mathematician's cases plus the Overseer's 4 sequences. His one remaining check — that
+  no `.live.*` files are left when all agents are idle — is carried into the Day 7 prompt.
+- **Day 7 prompt written:** `.agents/prompts/day-7.md`. Step 6 (shell, list, editor), the Day 6
+  worktree/branch/folder cleanup, the session-start checks, and the carried-in follow-ups.
+
+**Open:**
+- The rules deploy, once Badrish has run `firebase login`.
+- **Unpushed:** this entry's commit. Its SHA is in Builder's block to Badrish; his word covers an
+  exact range and "whatever is left" isn't one.
+- Removal of the Day 6 worktree, the branch `claude/notemaker-day6-step5-d35669`, and the two empty
+  leftover folders — after this session ends, at the top of Day 7.
+
+**Badrish:** "Builder - deploy the rules, and then get operations to push in the order you provided
+me. Then provide me the prompt for NoteMaker Day 7 which also includes removing the Day 6 worktree,
+branch and both the leftover folders. Once that's done, commit and push and merge whatever is left
+after operations does its job. From next session we won't be using worktrees."
+
 ## 2026-09-17 (Day 6, after close) — push and cleanup done; the logbook-hook false alarm reviewed
 **Worked:** builder, mathematician, overseer
 

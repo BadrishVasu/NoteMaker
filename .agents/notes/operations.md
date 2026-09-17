@@ -1,5 +1,25 @@
 # Operations' notebook — NoteMaker
 
+## 2026-09-17 — seventh session: pushing the logbook-gate false-alarm record
+
+Brought in for exactly one push, range and SHAs handed to me pre-approved by Badrish:
+`8d83bea..5ba2a8a` (2 commits, `90f5254` then `5ba2a8a`; `8d83bea` already on `origin/main`).
+Ran every pre-check the brief specified before touching `git push`, not after:
+`origin/main` at `8d83bea`, worktree `HEAD` at `5ba2a8a`, `git log --oneline 8d83bea..5ba2a8a`
+listed exactly those two commits in order, `merge-base --is-ancestor 8d83bea 5ba2a8a` confirmed
+the fast-forward. Pushed by SHA (`git push origin 5ba2a8a...:main`), never `HEAD`, no force, no
+`--no-verify`. Re-fetched and confirmed `origin/main` landed at `5ba2a8a`.
+
+Fast-forwarded the main checkout (`E:\Projects\Claude\NoteMaker`) only after confirming it was on
+`main` with a clean `git status` — it was. `merge --ff-only` succeeded, brought in the four
+Day 6 logbook files (`JOURNAL.md`, `notes/builder.md`, `notes/mathematician.md`,
+`notes/overseer.md`), local `main` now at `5ba2a8a`. `git branch --no-merged main` in that
+checkout printed nothing — no stray local branches sitting ahead of `main`, nothing to report
+beyond the empty output itself.
+
+Nothing here was mine to write — I pushed and fast-forwarded exactly the record Builder and
+Badrish had already settled.
+
 ## 2026-09-17 — sixth session, part 2: the lingering java.exe, fixed for real
 
 Builder came back with reproducing evidence I hadn't: the stray listener isn't a
