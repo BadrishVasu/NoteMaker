@@ -1,5 +1,11 @@
 # Builder's notebook — NoteMaker
 
+## 2026-09-17 (Day 6, after close) — a journal write mid-conflict counts as an entry
+
+If a cherry-pick or merge conflicts on `JOURNAL.md` while I run in the background, the logbook gate
+reads the conflict-marker write as my entry and can clear its markers before I'm done (Mathematician,
+limit N1). Resolve journal conflicts immediately, and don't trust a clean gate from that stretch.
+
 ## 2026-09-17 (Day 6, later) — I reported finished work of my own as open
 
 **At the start of every session, before the push report, run both of these and report what they

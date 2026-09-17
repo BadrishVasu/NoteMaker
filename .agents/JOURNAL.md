@@ -2,6 +2,43 @@
 
 Newest entry first. Append only.
 
+## 2026-09-17 (Day 6, after close) — push and cleanup done; the logbook-hook false alarm reviewed
+**Worked:** builder, mathematician, overseer
+
+**Moved:**
+- **Pushed on Badrish's word:** `302c980..8d83bea`. `origin/main` and local `main` are both at
+  `8d83bea79d3c602c44c47fb5c115f574957b9aa9`. The step-4 worktree and the branch
+  `claude/notemaker-builder-step-4-7c1d55` are removed. An empty folder
+  `.claude/worktrees/notemaker-builder-step-4-7c1d55` is still on disk, probably locked by a Claude
+  session.
+- **Logbook-hook review.** Badrish asked the Overseer to look at the false "SubagentStart hook did
+  not fire" warning, with the Mathematician using `deduce`. Claude called the Mathematician, since
+  the Overseer can't call agents. The subject is `~/.claude/hooks/`, not NoteMaker code.
+  - **Mathematician:** Claude's diagnosis ("a resume fires Stop without Start") was wrong. A
+    headless probe shows Start and Stop both fire on resume, with the same `agent_id`. The real
+    cause: the main turn's Stop cleared the markers while a background Builder was still running,
+    after a cherry-pick conflict had rewritten JOURNAL.md. He also found a real gap: a resume in
+    the same turn that writes nothing passes silently. His fix adds `.live.<agent_id>` markers and
+    rolls `.since` forward at Start. It is tested on 9 cases, with negative controls.
+  - **Overseer:** agrees. He re-ran the tests (old 3 wrong, new 9/9) and added 4 sequences of his
+    own. His recommendation is "apply with changes": update the three hook headers, then check once
+    that no `.live.*` files are left when all agents are idle. He corrected one timing claim: the
+    once-per-session warning was used up by the 19:42:47 FAULT, not an early block, and that is why
+    the 19:46–19:57 overseer work went unflagged.
+  - **Status: not applied.** It waits on Badrish's word, because `~/.claude/` is his global config.
+    Both notebooks hold the details. The diff and tests are in the session scratchpad `gate-fix/`.
+- **What failed:** Claude told Badrish the wrong diagnosis as fact without testing it. The
+  Overseer's rule going forward is to ask for the probe whenever anyone states a hook or platform
+  behaviour as fact.
+
+**Open:**
+- Badrish's word on applying the hook fix, with the Overseer's changes.
+- Firestore rules deploy, which still needs its own word.
+- The empty step-4 folder on disk.
+- The Day 6 worktree is removed after this session.
+- Pushing these new commits needs Badrish's word on the exact range, which is in Builder's block to
+  him.
+
 ## 2026-09-17 (Day 6, closing) — the push report that couldn't see another branch; Overseer's verdict
 **Worked:** builder, overseer
 
