@@ -9,6 +9,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:emulator": "firebase emulators:exec --only firestore --project demo-notemaker \"vitest run --config vitest.emulator.config.ts\"",
+    "test:all": "npm run test && npm run test:emulator",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "rules:deploy": "firebase deploy --only firestore:rules"
@@ -21,6 +23,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@firebase/rules-unit-testing": "^5.0.2",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.2",
     "@types/react": "^19.2.18",
@@ -29,6 +32,7 @@
     "eslint": "^10.9.1",
     "eslint-plugin-react-hooks": "^7.1.1",
     "fake-indexeddb": "^6.2.5",
+    "firebase-tools": "^15.30.1",
     "globals": "^17.11.0",
     "jsdom": "^30.0.1",
     "typescript": "^6.0.3",

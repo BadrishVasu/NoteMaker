@@ -223,6 +223,91 @@ clean fast-forward `47fb198..2871193`. Fetched again after and confirmed `origin
 local `main` at `2871193` — didn't take the push command's own success output as sufficient, checked
 the remote state independently.
 
+## 2026-09-17 — sixth session: Firestore emulator plumbing, Day 6 step 5
+
+Brought in by the Builder for one thing: the emulator harness his `firestore.rules` /
+`firestoreGateway.ts` work at step 5 needs, not the rules or the gateway themselves. Read the
+Day 5 journal entry and `features/sync-engine.md`'s "Step 5 owes" line first — it names exactly
+what `firestoreGateway.ts` will need to do (`includeMetadataChanges: true`, map error codes to
+`PermanentPushError`, `assertWireDoc` before every `transaction.set`), which is why the smoke
+test's rules content is explicitly disposable and the harness is not.
+
+### What I built, and the one judgment call
+
+Eight decisions were handed to me locked; I built to them rather than re-deriving. One thing I
+decided myself: **no `.firebaserc`.** The `.gitignore` has a stale comment claiming one is
+committed "it holds project aliases" — none exists yet. Since every command in this project
+passes `--project demo-notemaker` explicitly (`firebase.json` has no functions/hosting to need an
+alias for), a `.firebaserc` buys nothing and is exactly the kind of file that gets pointed at the
+live project by a later, less careful edit. Left it out; flagged the stale gitignore comment to
+Builder rather than editing it myself, since it's not mine to resolve which project alias (if any)
+eventually belongs there.
+
+Port 8080: the Firestore emulator's own default, and nothing else in `firebase.json` claims it
+(no hosting, no functions, no other emulators) — no reason to pick anything else.
+
+### Files
+`firebase.json` (new), `firestore.rules` (new, placeholder deny-all, `rules_version = '2'`),
+`vitest.emulator.config.ts` (new — `environment: 'node'`, `fileParallelism: false`, `globalSetup`),
+`src/test/emulatorGlobalSetup.ts` (new — throws if `FIRESTORE_EMULATOR_HOST` unset),
+`src/test/emulator.smoke.emulator.test.ts` (new — the required smoke test), `src/test/testSuiteSplit.test.ts`
+(new — item 7's proof, see below), `vite.config.ts` (added `test.exclude` for `*.emulator.test.ts`
+— without it, `*.test.{ts,tsx}` already matches `*.emulator.test.ts` since glob `*` crosses dots;
+this is not optional, it's the only thing keeping the fast suite from picking the emulator file up),
+`tsconfig.json` (added `vitest.emulator.config.ts` to `include`), `package.json` /
+`package-lock.json` (`firebase-tools@15.30.1`, `@firebase/rules-unit-testing@5.0.2` as
+devDependencies — the latter peers on `firebase@^12`, matching the existing dependency; `test:emulator`
+and `test:all` scripts).
+
+### Item 7, proven with real files rather than compared strings
+
+`src/test/testSuiteSplit.test.ts` imports both config files' actual `test.include`/`test.exclude`
+arrays and runs them through Node's `fs.globSync` against the real repo tree, then asserts:
+`importBoundary.test.ts` is in the fast suite's matched set and not the emulator suite's; the
+emulator smoke test is in the emulator suite's matched set and not the fast suite's. This exercises
+the configs themselves, not a copy of their glob strings that could drift out of sync with what
+vitest actually loads. It's part of the 701 in the fast suite (697 → 701, four new cases).
+
+### Gate, in order, from a clean tree
+- `npm run typecheck` — 0 errors.
+- `npm run lint` — 0 errors, 0 warnings.
+- `npm test` — **701/701** (697 baseline + 4 from the split-proof test), 28.79s wall (`Start at
+  18:28:36`, `Duration 28.79s`).
+- `npm run test:emulator` — **4/4** (the smoke test's four cases), wall time varies: first-ever
+  run was ~100s (one-time jar download, `cloud-firestore-emulator-v1.22.0.jar`, Java 25 / Node 24
+  as expected — nothing fought there); a clean warm run is **~6.5s** end to end (`firebase
+  emulators:exec` startup + vitest + teardown). Negative control run directly, bypassing the
+  wrapper (`npx vitest run --config vitest.emulator.config.ts` with no emulator up): "No test files
+  found" plus the globalSetup's own error, **exit code 1** — confirmed it fails loudly rather than
+  hanging or reporting green, which was item 5's requirement.
+
+### The one thing that fought me: Windows doesn't reliably kill the emulator's `java.exe`
+
+Ran `npm run test:emulator` back-to-back to get a clean timing number. The second run failed
+immediately: `Port 8080 is not open on localhost, could not start Firestore Emulator` — despite the
+first run logging `Firestore Emulator has exited upon receiving signal: SIGINT` and `Script exited
+successfully`. `netstat -ano` showed a `java.exe` still `LISTENING` on 8080 after firebase-tools
+believed it had shut it down; `taskkill //F //PID <pid>` cleared it, and the next run started clean.
+Reproduced it a second time to be sure it wasn't a fluke — same result, same fix.
+
+This is a known firebase-tools issue on Windows, not something introduced here or fixable from this
+repo: `emulators:exec` sends SIGINT, which Windows doesn't have natively (Node emulates it), and the
+Java child process doesn't reliably honour it. See firebase/firebase-tools#1367, #8007, #3871 —
+all describe the same lingering-`java.exe`-after-clean-shutdown-log symptom on Windows. **Flagging
+to Builder as an operational note for his iterative test-first work on `firestore.rules`**: if
+`npm run test:emulator` fails with "port taken" mid-session, it's this, not a rules or gateway bug
+— check Task Manager / `tasklist` for a stray `java.exe`, `taskkill //F //PID <pid>` it, and re-run.
+I didn't build an automated workaround (a pretest port-clearing script) unbidden — it's OS-specific,
+easy to get wrong, and this is a one-`taskkill`-away problem, not worth baking complexity into the
+scripts for. Worth revisiting only if it turns out to bite every single run rather than only
+back-to-back ones without a pause.
+
+### Not done / not mine
+`firestore.rules`'s real content and `src/sync/firestoreGateway.ts` are Builder's, test-first, per
+the brief. Did not touch `rules:deploy` or anything that could reach the live Firebase project — no
+emulator command here omits `--project demo-notemaker`, and `firebase.json` carries no live project
+reference anywhere. Did not commit; that's Builder's per the brief. Did not push.
+
 ## 2026-09-16 — fifth session (written 2026-09-17, late)
 
 Reconstructed from the record, not memory — this notebook stopped at 2026-09-01 and the Overseer

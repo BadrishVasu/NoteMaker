@@ -50,5 +50,10 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
     include: ['src/**/*.test.{ts,tsx}'],
+    // Emulator tests need a running Firestore emulator and share one instance, so they run
+    // under vitest.emulator.config.ts (`npm run test:emulator`), not here. Without this
+    // exclude, `*.emulator.test.ts` still matches `*.test.{ts,tsx}` above and the fast suite
+    // would pick them up and fail for lack of an emulator.
+    exclude: ['src/**/*.emulator.test.ts', 'node_modules/**'],
   },
 })

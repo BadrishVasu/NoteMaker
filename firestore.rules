@@ -1,0 +1,11 @@
+rules_version = '2';
+
+// Placeholder — denies everything so the emulator has a rules file to load.
+// Builder replaces this test-first at step 5; see .agents/features/sync-engine.md.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
