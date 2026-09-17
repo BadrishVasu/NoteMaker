@@ -115,7 +115,10 @@ transaction.** Offline, the session survives (ticket 08) but there is genuinely 
 this is inherent to a new device and no design avoids it.
 
 What the design must avoid is confusing that with an empty account. A `meta` object store carries
-**`initialSyncCompletedAt`** — set once, when the first snapshot for this uid has been applied.
+**`initialSyncCompletedAt`** — set once, when the first *server-backed* snapshot for this uid (`metadata.fromCache
+=== false`, applied from the full `snapshot.docs`) has been applied. *(Amended 2026-09-17 on Badrish's word: offline, Firestore
+delivers an empty from-cache snapshot first, which must not stamp this flag — 02 Defect 1, second correction. The flag is
+a UI fact only; it does not choose the engine's adopt view.)*
 Empty mirror plus unset flag renders *loading*; empty mirror plus set flag renders the genuine
 first-run empty state. Without that one field the two are indistinguishable and a new device shows a
 brand-new user's welcome screen over a corpus that is still downloading.
