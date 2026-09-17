@@ -1,11 +1,40 @@
 rules_version = '2';
 
-// Placeholder — denies everything so the emulator has a rules file to load.
-// Builder replaces this test-first at step 5; see .agents/features/sync-engine.md.
+// Ticket 01: ownership plus shape, and the 2026-08-26 amendment's closed nine-field allowlist.
+// Tested against the emulator in src/test/firestoreRules.emulator.test.ts. Deploying these to the
+// live project is a separate act that needs Badrish's word.
+//
+// Deliberately NOT here (01's amendment): no rule that conflictOf and conflictBase appear
+// together, no check of conflictBase's interior, no check of rev's provenance.
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if false;
+    match /users/{uid}/notes/{noteId} {
+      function isOwner() {
+        return request.auth != null && request.auth.uid == uid;
+      }
+
+      // "Absurdly future-dated" = more than one day ahead of the server clock. Ordinary skew
+      // passes; a clock set days wrong is denied, which the engine surfaces as permanent.
+      function isNote(d) {
+        return d.keys().hasAll(['title', 'titleIsCustom', 'body', 'createdAt', 'updatedAt', 'deletedAt', 'rev'])
+          && d.keys().hasOnly(['title', 'titleIsCustom', 'body', 'createdAt', 'updatedAt', 'deletedAt', 'rev', 'conflictOf', 'conflictBase'])
+          && d.title is string && d.title.size() > 0
+          && d.titleIsCustom is bool
+          && d.body is string
+          && d.createdAt is number
+          && d.updatedAt is number
+          && d.updatedAt <= request.time.toMillis() + 86400000
+          && (d.deletedAt == null || d.deletedAt is number)
+          && d.rev is string && d.rev.size() > 0
+          && (!('conflictOf' in d) || d.conflictOf is string)
+          && (!('conflictBase' in d) || d.conflictBase is map);
+      }
+
+      allow read, delete: if isOwner();
+      allow create: if isOwner() && isNote(request.resource.data);
+      allow update: if isOwner() && isNote(request.resource.data)
+        && request.resource.data.createdAt == resource.data.createdAt;
     }
   }
 }
