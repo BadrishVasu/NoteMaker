@@ -112,8 +112,17 @@ export interface LocalNote extends NoteDoc {
   baseContent: ForkPoint | null
 }
 
-/** In-memory only, owned by `sync/engine.ts`, never persisted (02 appendix, defect 1). */
-export type ServerState = ForkPoint & Pick<NoteDoc, 'rev' | 'deletedAt'>
+/**
+ * One `lastServerState` entry. In-memory only, owned by `sync/engine.ts`, never persisted
+ * (02 appendix, defect 1).
+ *
+ * Widened from `ForkPoint & Pick<NoteDoc, 'rev' | 'deletedAt'>` to the whole document —
+ * builder, step 3, 2026-09-17. `commitPush` ADOPTS from this entry (defect 1's fix), and an
+ * adopted row needs `createdAt`, `updatedAt`, `conflictOf` and `conflictBase` too; the
+ * five-field shape would have dropped a copy's `conflictBase` on adopt. The model did not
+ * carry timestamps or conflict fields, which is why its shape was narrower.
+ */
+export type ServerState = NoteDoc
 
 // ── The one serialisation boundary ────────────────────────────────────────────
 
@@ -152,3 +161,16 @@ export function toLocalNote(id: NoteId, doc: NoteDoc): LocalNote {
  *  Corrected 2026-09-06; the previous comment claimed a behaviour this body never had. */
 export const sameContent = (a: ForkPoint, b: ForkPoint): boolean =>
   a.title === b.title && a.titleIsCustom === b.titleIsCustom && a.body === b.body
+
+/** The three content fields, picked explicitly — never a spread of a row or a doc. */
+export const forkPointOf = (x: ForkPoint): ForkPoint => ({
+  title: x.title,
+  titleIsCustom: x.titleIsCustom,
+  body: x.body,
+})
+
+/**
+ * What a pure sync step asks the store to do. `applySnapshot` and `commitPush` return a
+ * list of these and the engine applies them in one store transaction, in order.
+ */
+export type RowWrite = { op: 'put'; row: LocalNote } | { op: 'delete'; id: NoteId }

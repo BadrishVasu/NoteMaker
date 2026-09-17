@@ -72,7 +72,7 @@ export interface NoteStore extends NoteStoreTx {
  * rev. Do not let this function's presence be read as covering it.
  *
  * The capture rule itself is an engine rule, not a row-shape rule, and it is stated
- * once, on `features/conflict-sync.md`: `baseContent := the in-flight content` at
+ * once, on `.agents/features/sync-engine.md`: `baseContent := the in-flight content` at
  * *every* transition that sets `baseRev := flightRev` while the row stays dirty (four
  * transaction branches plus the conflict-branch outbox-slot migration), and `null`
  * whenever the row goes clean. The earlier two-point version of this comment named one
