@@ -2,6 +2,29 @@
 
 Newest entry first. Append only.
 
+## 2026-09-17 (Day 6, epilogue) — Firebase CLI environment checked ahead of the Day 7 deploy
+**Worked:** builder, operations
+
+**Moved:**
+- **Walked the `firebase login` path before Badrish has to.** `firebase-tools@15.30.1` is a
+  devDependency, present only in this worktree's `node_modules`; there is no global install and
+  `firebase` is not on PATH. Login credentials are global
+  (`%APPDATA%\configstore\firebase-tools.json`), so one sign-in from any directory covers every
+  checkout. Nothing was deployed and no login was attempted — that is still Badrish's to do.
+- **Found a gap that would have bitten Day 7:** the main checkout's `node_modules` predates the
+  `firebase-tools` dependency, so it has no `firebase` binary. Day 7 runs without worktrees, so
+  `npm ci` in the main checkout has to come before any rules deploy. Written into
+  `.agents/prompts/day-7.md` alongside the deploy follow-up.
+- Committed Operations' ninth-session push record and these environment findings, which were both
+  sitting uncommitted in the Day 6 worktree.
+
+**Open:**
+- **Unpushed:** this entry's commit. Operations pushes it on Badrish's word.
+- The rules deploy and the Day 6 worktree/branch/folder cleanup, both unchanged from the entry
+  below.
+
+**Badrish:** "commit and push both, so they aren't lost when the Day 6 worktree is deleted."
+
 ## 2026-09-17 (Day 6, closed) — close-out pushed; Day 6 is done
 **Worked:** builder, operations
 

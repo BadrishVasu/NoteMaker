@@ -779,3 +779,15 @@ ruled out) — both are with it, neither needs sending twice.
 - Serialise the Outbox drain until the Mathematician says per-Note pushes are independent.
 - No build team before step 6. Steps 0–4 are pipeline plus pure logic; specialists there cost
   coordination and buy nothing.
+
+## 2026-09-17 — Firebase CLI environment check (for Day 7 deploy)
+- `firebase-tools@15.30.1` is a **devDependency**, already installed in this worktree's
+  `node_modules/.bin/firebase`. No global install anywhere; `firebase` is not on PATH.
+- **Gotcha:** the main checkout `E:\Projects\Claude\NoteMaker\node_modules` predates that
+  dependency — no `firebase` binary there. `npm ci` in the main checkout before any
+  `npm run rules:deploy`, or run the deploy from a worktree that has it.
+- Node v24.18.0 / npm 11.11.0 (D:\Softwares\nodejs). PS CurrentUser policy is RemoteSigned;
+  `npm.ps1`/`npx.ps1` already run, so the `firebase.ps1` shim is not blocked.
+- `firebase login` creds are global (`%APPDATA%\configstore\firebase-tools.json`), not
+  per-checkout — logging in once from any directory covers all of them.
+- No `.firebaserc` in the repo, so every deploy must pass `--project` explicitly.

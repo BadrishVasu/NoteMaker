@@ -93,6 +93,12 @@ corpus. Watch these, which are already decided and easy to quietly violate:
   `.firebaserc`, so a bare `npm run rules:deploy` would target whatever project the CLI has active.
   Run `npm test` and `npm run test:emulator` first and confirm the released project and ruleset from
   the CLI's own output afterwards.
+  **Before that deploy: run `npm ci` in the main checkout.** `firebase-tools` is a devDependency and
+  the main checkout's `node_modules` predates it — there is no `firebase` binary there, and there is
+  no global install either (`firebase` is not on PATH; invoke it via the npm script or
+  `npx firebase`). Day 7 runs without worktrees, so this gap is directly in the way. `firebase login`
+  credentials are global (`%APPDATA%\configstore\firebase-tools.json`), so Badrish signing in once
+  from any directory covers every checkout.
 - **Read cost must be measured at step 7, not inherited.** Ticket 03 priced the per-open full
   re-read against desktop-shaped opens; the design assumes Android reaps the app constantly, so
   20–50 opens/day. `persistentLocalCache` is the sanctioned one-line reversal if the number is bad.

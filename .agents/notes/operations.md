@@ -1,5 +1,23 @@
 # Operations' notebook — NoteMaker
 
+## 2026-09-17 — ninth session: pushing the Day 6 close-out entry, one commit
+
+Same job as the seventh and eighth sessions, one commit later: range pre-approved by Badrish,
+`59e96abfe6ad322803c0d4542a4b3416858e2bd9..53595ebdb11e6b3b6dafeaf4dbe3555f7b4a13e2`, a single
+docs commit (`53595eb`, the Day 6 close-out journal entry plus my own eighth-session notebook
+entry, committed by the Builder on my behalf). Checked `git rev-parse HEAD` (`53595eb...`)
+against `origin/main` (`59e96ab...`) before touching push — matched the brief exactly. Pushed by
+SHA (`git push origin 53595eb...:main`), fast-forward, no force. Re-fetched, `origin/main`
+landed at `53595eb...`.
+
+Fast-forwarded the main checkout the same way as the last two sessions: `git status --short`
+empty first, already on `main`, then `merge --ff-only 53595eb...` — succeeded, brought in the
+same two files (`JOURNAL.md`, `notes/operations.md`). `main` and `origin/main` both confirmed at
+`53595eb...` afterward. `git branch --no-merged main` printed nothing. Didn't touch the Firebase
+CLI, didn't commit anything myself, didn't delete any worktree or branch. This entry itself is
+left uncommitted in the worktree — nothing else changed this session to bundle it with, and it's
+not mine to commit unilaterally; the next session (or Builder) should pick it up.
+
 ## 2026-09-17 — eighth session: pushing the Day 6 close-out, one commit
 
 Same job as the seventh session, one commit later: range pre-approved by Badrish,
