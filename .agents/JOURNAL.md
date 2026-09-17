@@ -2,6 +2,45 @@
 
 Newest entry first. Append only.
 
+## 2026-09-17 (Day 6) — step 5: firestore.rules and firestoreGateway against the emulator
+**Worked:** builder, operations
+
+**Moved:**
+- **Push range, checked first.** Before any change, `git rev-parse` gave `origin/main` =
+  `HEAD` = `302c980`. The range was empty, matching the Day 5 push. Reported to Badrish.
+- **Emulator plumbing (Operations), `bc66936` + `cb5e2b6`:** `firebase.json` (emulator only,
+  `demo-notemaker`), `npm run test:emulator` under a separate node vitest config, and a fast
+  suite that excludes `*.emulator.test.ts` (checked in both directions). On Windows,
+  `emulators:exec` left the emulator's java listening on 8080 after **every** run. Operations
+  first judged it an occasional back-to-back problem, but it failed on my second run, so they
+  built `scripts/runEmulatorTests.mjs`: it refuses a busy port, kills what it spawned, and keeps
+  the exit code.
+- **Step 5 built test first, `a6121ad`:** `firestore.rules` (ownership plus the nine-field
+  allowlist, deny controls throughout, the Conflict copy accepted, a tenth field denied) and
+  `sync/firestoreGateway.ts`. Everything the step owed is in it: `includeMetadataChanges`, a
+  complete batch from `snapshot.docs`, `PermanentPushError` mapping, `assertWireDoc` on the
+  handed object, and 09's parsed write-path guard with negative controls. `engine.ts` runs
+  clean sync, conflicting edits and a rules denial against the emulator. Gate after the last
+  change: typecheck 0, lint 0, **715/715**, emulator **72/72**. Of **16 mutants**, 15 are
+  killed and 1 is an equivalent survivor (`features/sync-engine.md`).
+- **The mutants caught my own suite.** On the first pass, three gateway mutants survived:
+  removing `includeMetadataChanges`, building the complete batch from `docChanges`, and
+  counting a from-cache batch as complete. Online at open, the SDK waits for the server, so the
+  online tests could not tell the difference. I added offline cases through a TCP proxy, and
+  all three are now killed. Firestore's real behaviour agrees with the fake and with the
+  Mathematician's rulings, so he wasn't needed.
+
+**Open:**
+- **Unpushed:** as `git rev-parse` gives it in Builder's block to Badrish after this commit.
+- **Rules are not deployed.** That needs its own word from Badrish.
+- **The one-day future bound on `updatedAt`** is my number, and Badrish should confirm it.
+- `.gitignore` says `.firebaserc` is committed, but none exists (Operations flagged it). The
+  smoke test's comment still says "placeholder rules". Both are cosmetic.
+- Ticket 03 line 118 (from Day 5) is still waiting on Badrish.
+
+**Badrish:** "Builder, this is NoteMaker Day 6. Build step 5." Push rule unchanged. Deploying
+rules is a separate act.
+
 ## 2026-09-17 (Day 5) — step 4: engine against fakeGateway; the adopt-view rule corrected
 **Worked:** builder, mathematician, designer
 

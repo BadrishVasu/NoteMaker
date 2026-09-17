@@ -1,5 +1,34 @@
 # Builder's notebook — NoteMaker
 
+## 2026-09-17 (Day 6) — step 5: green against a real backend still proved less than it looked
+
+The whole emulator suite was green on its first run, and the transaction retry test passed
+straight away. The mutants are what showed the listener tests were blind: three of seven
+gateway mutants survived, including removing `includeMetadataChanges`, the exact thing the brief
+called non-negotiable. The cause was environmental, not a bug. **Online at open, the SDK holds
+the first snapshot until the server answers**, so an online test can never see the from-cache
+path the rule exists for. The rule to keep is sharper than "run mutants": **a test of a rule
+about a failure mode has to put the system in that failure mode.** Here that meant a TCP proxy
+the test can cut. It needed no production seam and no firebase/firestore import in tests.
+
+Also worth keeping:
+- A mutant that "survives" can be equivalent. Dropping `rev` from `hasAll` still denies,
+  because `d.rev is string` errors on a missing key. Before calling it a gap, relax the other
+  guard as well and check that the mutant then dies. Here it did.
+- Operations called the stray-java problem "only back-to-back runs, not worth a script". It hit
+  on my very next run. A timestamp (started 18:34:01, which was my run) settled it in one look,
+  so I sent it back with the evidence instead of working around it.
+
+Dead ends:
+- The warm-cache test with a **second online listener**: it joins the existing query view and
+  gets every doc as `added`, so it can't tell `docs` from `docChanges`. It only
+  discriminates when the second listener opens offline.
+- Printing mutant results on Windows Python: cp1252 crashes on vitest's box characters. Set
+  `PYTHONIOENCODING=utf-8`. The script's `finally` restored both files, and sha1 confirmed it.
+- A Python patch written inside a bash heredoc turned `
+` into real newlines inside a string
+  literal. Same class as Day 5's slip. Edit the script file directly instead.
+
 ## 2026-09-17 (Day 5) — step 4: the brief's own sentence was the bug, and my check lied twice
 
 **Badrish's brief said to adopt from `lastServerState` once `initialSyncCompletedAt` is set.** I

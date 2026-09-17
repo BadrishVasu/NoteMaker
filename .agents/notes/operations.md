@@ -1,5 +1,78 @@
 # Operations' notebook — NoteMaker
 
+## 2026-09-17 — sixth session, part 2: the lingering java.exe, fixed for real
+
+Builder came back with reproducing evidence I hadn't: the stray listener isn't a
+back-to-back-runs-only problem, it bit his very first standalone run too (PID 21456, killed by
+hand). My own notebook entry above called this "worth revisiting only if it bites every run" —
+that call is now overturned by his evidence, not by mine; recorded here so the correction has its
+own line rather than silently editing the earlier entry.
+
+### `scripts/runEmulatorTests.mjs`
+
+`npm run test:emulator` now runs `node scripts/runEmulatorTests.mjs` instead of `firebase
+emulators:exec ...` directly. The wrapper: refuses to start if port 8080 is already `LISTENING`
+(names the PID and process via `netstat -ano | findstr` + `tasklist /FI`, no shelling through
+`cmd /c` for `tasklist` itself — see the dead end below); spawns the same `firebase emulators:exec
+--only firestore --project demo-notemaker "vitest run --config vitest.emulator.config.ts"` command
+it replaces; on exit, `taskkill /F /T /PID <spawned pid>` (kills the whole recorded process tree
+even though the immediate firebase-tools node process has usually already exited by the time this
+runs — Windows keeps each process's parent-PID at creation time regardless of whether that parent
+is still alive, so the tree-kill still finds the orphaned Java grandchild); then re-checks port
+8080 and kills whatever's still listening on it directly by PID, since step 1 already proved the
+port was free before this run started — anything on it now was spawned by this run, tree-kill or
+not; exits with the exact code the wrapped command returned, never swallowed.
+
+Verified, not asserted:
+- **Two back-to-back runs, both clean.** No `sleep`, nothing hand-waved — each run's own cleanup
+  is what makes the next run's port-free precondition true. Both: 70/70 tests, exit 0, wrapper
+  logged "cleaning up a leftover listener" with a real PID each time (Windows still doesn't free
+  the port fast enough for firebase-tools' own shutdown alone — the wrapper's cleanup step is
+  doing real work, not a no-op formality).
+- **A deliberately failing test still exits non-zero.** Appended one `expect(true).toBe(false)` to
+  the committed smoke test (mine to edit, reverted after — confirmed `git diff` empty), ran once:
+  `Script exited unsuccessfully (code 1)`, wrapper's own exit matched, cleanup still ran and killed
+  the leftover PID regardless of the failure. Vitest's exit code survives the wrapper intact.
+- **Port-free precondition checked between every run**, not assumed: `netstat -ano | grep
+  LISTENING` on 8080 before each run in this session, always empty.
+
+### Dead end: `spawn(cmd, args, { shell: true })` re-splits a quoted argument
+
+First version passed `['emulators:exec', '--only', 'firestore', '--project', PROJECT_ID,
+TEST_CMD]` as an args array to `spawn('firebase', args, { shell: true })`. Failed immediately:
+`Error: Too many arguments`, plus Node's own `DEP0190` warning about exactly this. With
+`shell: true`, Node quotes each array element independently before building the command line for
+`cmd.exe`, so `TEST_CMD`'s internal spaces (`"vitest run --config ..."`) got re-split into
+separate `emulators:exec` arguments instead of staying one quoted string. Fix: build the entire
+command as one pre-assembled string (`firebase emulators:exec ... "${TEST_CMD}"`) and pass that
+single string as `spawn`'s first argument with `shell: true` — bypasses the array-requoting path
+entirely. Second dead end in the same shape: the `tasklist` lookup, nested as `cmd /c "tasklist
+/FI \"PID eq N\" /NH"`, broke `tasklist`'s own `/FI` parsing (`Invalid argument/option - 'eq'`) —
+double-quoting through an unnecessary intermediate shell layer. `tasklist` doesn't need a shell at
+all (no pipe), so it's called with plain `execFileSync('tasklist', ['/FI', 'PID eq N', '/NH'])` —
+only the `netstat | findstr` lookup genuinely needs `cmd /c` for the pipe.
+
+### What I didn't touch
+
+`firestore.rules`, `src/test/firestoreRules.emulator.test.ts`, `src/sync/firestoreGateway.ts`,
+`src/sync/firestoreGateway.emulator.test.ts`, `src/sync/firestoreGateway.writePath.test.ts`,
+`src/sync/engine.emulator.test.ts`, `src/test/writePathGuard.ts` — all Builder's, several
+appearing mid-session while he worked concurrently in the same worktree. Typecheck/lint/test were
+briefly red against an intermediate state of his in-progress files (a module not yet written) and
+went green again once he'd finished writing it — not a regression from anything here, just two
+agents' file-save timing overlapping. Final gate below is against the state after his work settled.
+`eslint.config.js` gained one addition (Node globals for `scripts/**/*.mjs`, since that directory
+needed `process`/`console` and the existing `src/**` config doesn't cover it) — nothing existing
+changed.
+
+### Gate, final
+- `npm run typecheck` — 0 errors.
+- `npm run lint` — 0 errors, 0 warnings.
+- `npm test` — 715/715, `Duration 16.54s` (up from 701 in the first report — Builder's own new
+  tests, not mine).
+- `npm run test:emulator` × 2, back-to-back — 70/70 each, exit 0 each, ~8–10s each after the one
+  cleanup step. Negative control (forced failure) — exit 1, cleanup still ran.
+
 ## 2026-08-27 — first session: the push proposal
 
 Brought in by the Builder for exactly one thing: get `main` in front of Badrish as a proposal he

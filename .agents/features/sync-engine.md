@@ -39,14 +39,31 @@ one.
 - [x] `memoryNoteStore` serialises transactions as IndexedDB does — contract test, both stores.
 - [x] Structural: ESLint forbids `Date`, timers, `performance`, `navigator` in `sync/engine.ts`,
       tested both directions in `importBoundary.test.ts`.
-- [ ] `sync/firestoreGateway` + emulator: real transaction semantics
+- [x] `sync/firestoreGateway` + emulator — step 5, 2026-09-17, commit `a6121ad` (plumbing
+      `bc66936` and `cb5e2b6`, Operations). `firestore.rules` covers ownership plus 01's closed
+      nine-field allowlist, and each allow case has a deny control that differs in one thing. The
+      gateway's listener uses `includeMetadataChanges: true`. `complete` is the first
+      `fromCache === false` snapshot, built from `snapshot.docs`. Removals arrive as `doc: null`.
+      `runTransaction` checks `assertWireDoc` on the object handed to `set`, and
+      `mapPushError` turns `permission-denied`/`invalid-argument`/`out-of-range`/`unimplemented`
+      into permanent errors. Offline cases go through a test TCP proxy that cuts the link.
+      `engine.ts` runs clean sync, conflicting edits and a rules denial (reaching it as
+      permanent) against the real gateway. Gate after the last change: typecheck 0, lint 0,
+      `npm test` **715/715**, `npm run test:emulator` **72/72** (twice, ~13 s). **16 mutants**
+      (9 rules, 7 gateway): 15 turn the emulator suite red. One survives, and it is equivalent:
+      dropping `rev` from `hasAll` still denies, because `d.rev is string` fails on a missing
+      key. The same mutant with the type check also relaxed is killed.
 - [x] **Ticket 09's import-boundary guard is built and passing** — `src/test/importBoundary.test.ts`,
       landed at step 0 rather than step 5. Tested in both directions, with negative controls; it
       immediately caught the boundary silently not working (layered ESLint config objects replace
       `no-restricted-imports` rather than merging it).
-- [ ] The second half of 09's guard: an intra-file assertion that `runTransaction` is the only write
-      path *inside* `firestoreGateway.ts`. The boundary stops the call being written elsewhere, not
-      being written wrongly there. Lands with the gateway at step 5.
+- [x] The second half of 09's guard, step 5: `src/sync/firestoreGateway.writePath.test.ts`
+      parses the gateway (TypeScript AST, not grep) and fails on any import of `setDoc`,
+      `updateDoc`, `addDoc`, `deleteDoc` or `writeBatch`, including an aliased one, and on a
+      namespace, default, subpath, dynamic or `require` import of firebase/firestore. It
+      asserts that `runTransaction` is imported, so it knows it is reading the real file. There
+      are ten negative controls, plus controls for allowed imports and for a banned name from
+      another module.
 - [x] **The `LocalNote extends NoteDoc` leak guard** — step 4. `assertWireDoc` runs on every object
       the fake hands its transaction (step 5's gateway must call it too); engine tests assert the
       key sets for an ordinary Note (7) and a fully populated Conflict copy (9, `conflictBase` 3),
@@ -157,13 +174,40 @@ one.
   nothing on it; a commit re-drains with its originating trigger — builder — 2026-09-17
 - `lastServerState` is a `Map` inside `engine.ts`, not its own file — builder — 2026-09-17
 
+- **Step 5, the real semantics agree with the fake and with the model**. Nothing needed the
+  Mathematician. Observed on the emulator: (1) contention on a read of a *missing* document
+  retries, and the retry sees the other client's create; (2) online at open with an empty memory
+  cache, the first snapshot is already server-backed; (3) offline at open, the first snapshot is
+  an empty `fromCache` one. Without `includeMetadataChanges` the reconnect never produces a
+  complete batch (the mutant is killed), which confirms his 2026-09-17 claim on the real SDK;
+  (4) a listener that opens offline over a warm cache gets an empty `docChanges` on reconnect,
+  so the complete batch has to come from `snapshot.docs` (the mutant is killed) — builder —
+  2026-09-17
+- Permanent codes are `permission-denied`, `invalid-argument`, `out-of-range` and
+  `unimplemented`. `failed-precondition` stays transient because exhausted transaction
+  contention rejects with it. `unauthenticated` stays transient because a token refresh fixes
+  it. Only errors named `FirebaseError` are mapped. Anything thrown by `decide` passes through
+  unchanged, so `ConflictCopyIdTooLongError` still reaches the engine as itself — builder —
+  2026-09-17
+- `openFirestore` (memory cache; emulator target with a mock token) lives in the gateway, and so
+  does a `beforeWrite` test seam with the fake's meaning. Tests never import firebase/firestore:
+  rules tests use the compat handle from `@firebase/rules-unit-testing`, and offline cases use a
+  TCP proxy — builder — 2026-09-17
+- Rules allow an owner's `delete` (for a future purge or delete-forever). Nothing outside
+  `users/{uid}/notes/{noteId}` is readable or writable — builder — 2026-09-17
+
 ## Open questions
 - ~~Step 4 owes: adopt view; `ConflictCopyIdTooLongError`~~ — closed at step 4, see Decisions.
 - **Ticket 03 line 118** ("set once, when the first snapshot for this uid has been applied") should
   say a *server-backed* (`fromCache === false`) snapshot — waiting on Badrish; it is his record.
-- Step 5 owes: `firestoreGateway` must compute `complete`/`fromCache` from
-  `includeMetadataChanges: true` snapshots, map Firestore error codes to `PermanentPushError`, and
-  call `assertWireDoc` before every `transaction.set`.
+- ~~Step 5 owes: includeMetadataChanges, error mapping, assertWireDoc~~ — closed at step 5.
+- **Rules not deployed.** Deploying to the live project is a separate act and needs Badrish's word.
+- **The "absurdly future-dated" bound is one day ahead of server time.** 01 names no number, so I
+  chose this one. A device whose clock is more than a day fast gets a permanent push failure,
+  which the engine surfaces. It is waiting on Badrish to confirm or change it.
+- Not exercised on the emulator: a transaction that commits and then rejects on the client
+  (a lost response). It cannot be produced deterministically there. The engine's `landed` branch
+  covers it against the fake.
 - None blocking the engine's own work. One dependency elsewhere:
   - ~~The literal `NoteDoc` / `LocalNote` types~~ — landed as `src/domain/note.ts`, 2026-09-06.
   - Ticket 13's purge must respect appendix cell 7 (dirty row + absent server doc = no-op). Noted on
