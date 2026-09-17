@@ -1,5 +1,57 @@
 # Overseer's notebook — NoteMaker
 
+## 2026-09-17 — Day 4 check, step 3 (`c63921a`, `916507a`, `0cec6ac`)
+
+**Verdict: on track.** Brief honoured point by point. The `commitPush` move is justified. All three
+corrections held. Three record findings, none blocking.
+
+### What I checked myself
+- vitest 231/231, tsc 0, eslint 0 at HEAD. origin/main = `ec664aa`, and `origin/main..main` has 6 commits (1 code, 5 docs).
+- `src/domain/`: no `Date.now`, `new Date`, `performance.now` or `Math.random`. The copy timestamps come from the in-flight `updatedAt`.
+- Cell 7: `applySnapshot.test.ts:101` asserts dirty × absent → `[]`, so the row keeps its `baseContent`. `sync.lineage.test.ts:72` runs the trace where that retained value becomes a correct `conflictBase`.
+- P-INV: the harness and `noteStore.ts` still call it a row-shape check. Lineage is a separate assertion against content-per-rev in the fixture (`syncHarness.ts:252-260`).
+- Gaps A, B and C are named describes with the Mathematician's trace strings as test titles and bodies. Gap C's continuation uses Builder's reading, which the Mathematician confirmed in his own notebook (verdict 2).
+- Random walks: 2 deliveries × 2 starts × purge on/off × 400 = 3,200. That matches the journal.
+- `commitPush(flight, action, local, server): RowWrite[]` is pure and lives in `domain/reconcile.ts`.
+- The Mathematician's two corrections sit in 02 (both places), `architecture.md` and the feature file, each dated and attributed.
+- `features/sync-engine.md` `Status: in-progress` is true: the engine and gateway are unbuilt.
+
+### Call on `commitPush` → `domain/`: justified, not drift
+The brief required Gaps A/B/C as step-3 regression tests. Those gaps are capture-rule bugs, and the
+capture rule runs when a push outcome is applied. Leaving that in `engine.ts` means either no Gap
+tests until step 4 or testing the rule through the engine. Moving it keeps `domain/` pure and the
+engine thinner. The decision is recorded with its reason. It's a reversible module placement, not a
+Mathematician trigger. What it costs is two engine-owned items with no tests. Both are written
+down, in the journal Open list and the feature file Open questions. The adopt-view choice
+(lastServerState vs transaction read) is 02's defect 1, a correctness item, so step 4 has to land it as a test.
+
+### Findings (owners fix)
+1. **`architecture.md` still assigns the capture rule to the engine.** Table rows at lines 154 and 157
+   say "`engine.ts`, applying `PushOutcome`", which contradicts the moved decision and line 75 of
+   the same file. The record now disagrees with itself. Owner: Designer (doc owner), or Builder with the Designer told.
+2. **Push range notation, repeated from Day 3 finding 2.** The pending range was reported as
+   `721e875..0cec6ac`. In git that means 5 commits and excludes `721e875`. The correct range is
+   `ec664aa..0cec6ac`. The journal lists all six hashes, so the record is right, but the push
+   authorisation will be phrased from the range. Second time, so it's a pattern.
+   Owner: whoever phrases it (Builder or Claude). Builder should note it in his notebook.
+3. **Mutant count.** The journal and the feature file say "nine mutants", but the feature file lists ten.
+   Owner: builder, in the next entry.
+- Carried from Day 3, still open: Operations' notebook ends 09-01. Operations wasn't run today, so it
+  couldn't fix it. Someone has to bring it in.
+
+### Not findings, don't re-raise
+- The Mathematician ruled by reasoning, not by re-running the spike (the scripts are gone). His notebook says so plainly.
+  The seeded walks plus 9–10 mutants are real empirical backing, so this is proportionate.
+- The disagreement was in appendix 3 (commit cells), not the `applySnapshot` table the brief named. Builder
+  brought the Mathematician in anyway. That's the right reading of the brief.
+- Builder's mutation-script slip (a mutant left on disk) was self-caught and recorded. `mayWriteCopy` at HEAD is the real guard.
+- The Mathematician's k=2 lagged-delivery suggestion: the harness has `current` and `queued`, and the journal calls
+  `queued` in-order stale delivery. It's marked non-blocking. I didn't verify it covers k=2, so confirm at step 4 if it matters.
+
+### For next time
+- Step 4: the adopt-view test and a surfaced `ConflictCopyIdTooLongError` exist. The `LocalNote extends NoteDoc` leak guard lands with `fakeGateway`.
+- Check that architecture table rows 154 and 157 were fixed. Check the Operations notebook.
+
 ## 2026-09-16 — Day 3 audit, 0e32dce..721e875
 
 **Verdict: on track.** First check since 08-25. That's three weeks and the first real code, which is
