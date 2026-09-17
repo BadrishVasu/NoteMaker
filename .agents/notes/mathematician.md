@@ -1,5 +1,58 @@
 # Mathematician — notebook
 
+## 2026-09-17 — Global logbook hooks: the "SubagentStart did not fire" false alarm
+
+Asked by the Overseer via Claude (Badrish's request). Subject is `~/.claude/hooks/`, not NoteMaker
+code; recorded here because it fired in this worktree. Nothing under `~/.claude/` edited; the
+change is a proposed diff awaiting Badrish.
+
+**Root cause (high confidence, from the session transcript and builder sidechain):** the gate
+discharged the markers while the resumed Builder was still running in the background. At 19:40:19
+the Builder's `git cherry-pick 269d3a5` hit a conflict and rewrote JOURNAL.md with conflict markers.
+At 19:40:25 the main thread's turn ended and Stop fired. Since journal -nt .since, the gate deleted
+both markers. The Builder kept working, wrote its real entry at 19:41:43, and SubagentStop at
+19:42:24 created a fresh `.agents` with no `.since`. At the next Stop, 19:42:47, the gate reported a
+hook fault. The same interleaving happened again at 19:58:52 (resume), 19:58:54 (discharging Stop)
+and 19:59:37 (Stop), which accounts for the 89-byte builder-only `.agents` left behind.
+
+**Dead end: "a resume fires SubagentStop without SubagentStart."** This is false. I checked it with
+a headless `claude -p` probe (2.1.241) that used scratchpad-local logging hooks. A foreground spawn
+followed by a SendMessage resume logged Start/Stop, then PostToolUse(SendMessage), then Start/Stop
+again with the **same agent_id**. In both incidents the resume's Start came before the discharging
+Stop, so a Start firing on resume could not have prevented the bug.
+
+**Pre-existing hole found (worse than the false alarm):** suppose a run ends and is resumed in the
+same main turn, with no Stop in between. The resume's Start sees `.since` already present and
+doesn't touch it. If the resumed work writes nothing, the old entry still makes journal -nt .since
+true, and the gate passes silently.
+
+**Fix (3 hunks, diff in my reply to the Overseer):**
+1. confirm.sh: roll `.since` forward, and truncate `.agents`, when journal -nt .since at Start.
+   Also touch `<pkey>.live.<agent_id>`.
+2. release.sh: remove `<pkey>.live.<agent_id>`.
+3. gate: don't discharge while any `.live.*` exists.
+A leaked live marker only delays deletion, because the next Start rolls `.since` anyway. I did not
+add a timeout, which follows reset.sh's "no ageing out" rule.
+
+**Rejected:**
+- Recreating `.since` at SubagentStop when it's missing. That's the stated constraint: the entry
+  comes before the Stop marker, so honest sessions get flagged.
+- Recording the settle time and restoring `.since` from it. This gives false flags when the main
+  Stop lands between an agent's entry and its SubagentStop, which is a common window.
+- Deferring the gate's block, not just its discharge, while an agent is live. A leaked live marker
+  would then silence the gate for good.
+
+**Tests:** 9 scenarios in `scratchpad/gate-fix/test.sh`, using `touch -d` time control. On the old
+hooks, P1 (the incident) gives FAULT and N3 (same-turn resume that writes nothing) gives a silent
+pass. On the patched hooks all 9 are correct, including the negative controls N2, N3, N4 and P5b.
+
+**Known limits, not fixed:**
+- mtime can't distinguish a conflict-marker write from an entry (N1). This matches the design's
+  per-stretch rule.
+- A main Stop while a live agent hasn't written yet still blocks mid-run, and it spends the
+  once-per-session `.warned`. This session's false alarm spent it too, so the real 19:46–19:57
+  overseer debt went unannounced.
+
 ## 2026-09-17 — NoteMaker, step 5: odds of an honest device breaking the 1-day `updatedAt` bound
 
 Reasoned from code (`firestore.rules:27`, `edit.ts`, `conflictCopy.ts:48-49`, `reconcile.ts:153`,

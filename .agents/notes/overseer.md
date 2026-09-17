@@ -1,5 +1,49 @@
 # Overseer's notebook — NoteMaker
 
+## 2026-09-17 — Review of the Mathematician's logbook-gate fix (SubagentStart "did not fire" false alarm)
+
+**Verdict: sound. Apply with two small changes.** Nothing under `~/.claude/` touched. Fix is in the
+session scratchpad `gate-fix/` (`fix.diff`, `old/`, `new/`, `test.sh`). My extra sequences are in `overseer-check/t.sh`.
+
+### What I checked myself
+- `old/` matches the installed hooks byte for byte, so the test compares against what's really installed.
+- **Root cause holds.** Reflog: cherry-pick `c8d10b0` 19:40:12, conflicted `41324f1` 19:40:31 (the journal
+  was rewritten in between). Main transcript: Stop at 19:40:25 with no error, the Builder's task
+  notification at 19:42:26, the FAULT at 19:42:47. The Builder's real entry `ca26496` is at 19:42:01.
+- **Claude's diagnosis was wrong.** At 19:43 Claude told Badrish as fact that "a resumed agent fires the
+  stop hook but not the start hook". `resume-probe/events.log` shows Start+Stop twice with the same
+  `agent_id`. Nobody tested it before saying it. That was the corner cut.
+- Re-ran `test.sh`: old 3 WRONG (P1, N1, N3), new 9/9. P1 and N3 flip, and N2/N4/P5b/F1 are the controls
+  (they still BLOCK or FAULT). So the tests are real both ways.
+- My extra sequences (old / new): O1 parallel runs, entry written while A is still running (FAULT / pass).
+  O2 B starts after A's entry and writes nothing (pass, a second silent gap / BLOCK). O3 payload has no
+  `agent_id` (FAULT / FAULT: it fails loudly and falls back to old behaviour). O4 incident, then later
+  unrecorded work in the same session with `warned` kept (pass / BLOCK).
+- `logbook-warn.sh` also reads `.since`. It skips when the journal is newer, so markers that stay put while
+  a `.live` exists don't produce false "owing" lines.
+
+### Findings
+1. **His stated limit is misattributed.** He says 19:46–19:57 went unflagged because an early block used
+   up the warning. The Overseer ran in the foreground, so no early block happened. The FAULT at 19:42:47
+   used up `$sid.warned`, which silenced the 19:52:52 Stop. O4 shows the fix would have caught that.
+   The limit he describes is real in general, just not what happened this session.
+2. **The design history would go stale.** The gate header says `.since` is "created once" and the release
+   hook says `.agents` is "append-only". The fix rewrites the first and empties the second. The header
+   file list doesn't mention `.live.<agent_id>`. Those headers are the design record, so update them in
+   the same change.
+3. **Version gap.** The probe ran on `claude` 2.1.241 (PATH). The session runs 2.1.271. Low risk: a
+   missing or mismatched `agent_id` either fails loudly (O3) or leaks a `.live` file, which only delays
+   clearing the markers. After applying, check once that no `.live.*` files remain when all agents
+   are idle.
+4. Leaked `.live` files are never cleaned up. That doesn't hurt correctness. Accept it, don't build for it.
+5. Remaining limit, not for this change: a main-thread Stop while a background agent is running and
+   hasn't written yet still blocks early and uses up the once-per-session warning. Ticket it separately
+   if it recurs.
+
+### For next time
+- When anyone states a hook or platform behaviour as fact, ask for the probe. This one got to Badrish
+  untested.
+
 ## 2026-09-17 — Day 6 check: impact of the unmerged Day 5 commits, and step 5 against its brief
 
 **Verdict: on track.** The missed merge cost the record, not the build. The branch is whole again. Step 5
