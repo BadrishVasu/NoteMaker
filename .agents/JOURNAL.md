@@ -2,6 +2,31 @@
 
 Newest entry first. Append only.
 
+## 2026-09-17 (Day 6, closing) — the push report that couldn't see another branch; Overseer's verdict
+**Worked:** builder, overseer
+
+**Moved:**
+- **Correction to the Day 6 entry below.** My start-of-session push report said the range
+  `302c980..302c980` was empty. That compared `origin/main` with `HEAD` only, and it can't see
+  another branch. Unpushed work at that moment also included `3b442b6` and `269d3a5` on
+  `claude/notemaker-builder-step-4-7c1d55`. The report was wrong.
+- **Overseer's Day 6 verdict:** on track, and the branch is whole. The missed merge affected only
+  the record: both step-4-branch commits are here as `c8d10b0` and `41324f1`, confirmed line by
+  line.
+- Session start from now on: `git branch --no-merged main` and
+  `git log --branches --not origin/main --oneline`, with the push range reported from the second.
+
+**Open:**
+- **For Claude:** the Day 6 worktree was created from `refs/remotes/origin/main`, not local
+  `main`. A new worktree never picks up unpushed work, so the next one needs to start from the
+  pushed commit.
+- **For Claude:** the 16:35 marker for the main checkout (`.agent-locks/c7007023e3c6.since`)
+  belongs to the Day 4-later session, which is recorded. It's a leftover marker, not a missing
+  entry.
+- Push, fast-forward of `main`, and removal of the step-4 worktree and branch are waiting on
+  Badrish's word. The results go in the next session's entry. The Day 6 worktree is removed after
+  this session ends.
+
 ## 2026-09-17 (Day 6, later) — ticket 03's amendment recovered from an unmerged branch; one-day bound confirmed
 **Worked:** builder, mathematician (Overseer investigated the miss)
 

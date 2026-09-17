@@ -1,5 +1,66 @@
 # Overseer's notebook — NoteMaker
 
+## 2026-09-17 — Day 6 check: impact of the unmerged Day 5 commits, and step 5 against its brief
+
+**Verdict: on track.** The missed merge cost the record, not the build. The branch is whole again. Step 5
+matches Badrish's brief item by item. Nothing is pushed or merged yet.
+
+### What I checked myself
+- Refs: `main` = `origin/main` = `302c980`. The only unmerged branch is `claude/notemaker-builder-step-4-7c1d55`
+  (`269d3a5`), and its worktree is clean. No stash. `302c980..ca26496` = 7 commits:
+  `bc66936`, `cb5e2b6`, `a6121ad` are code/tooling, and `b60d6e1`, `c8d10b0`, `41324f1`, `ca26496` are docs.
+- **Whole:** the step-4 branch touched 3 paths (JOURNAL, builder notebook, ticket 03). `git diff 269d3a5 HEAD`
+  on those paths is **insertions only** (the Day 6 and Day 6-later entries), with no deletions, so every
+  line of the step-4 branch survives unaltered, blank separators included. Ticket 03 is identical.
+  `3b442b6` and `c8d10b0` have the same patch-id. Each JOURNAL heading appears once, in newest-first order.
+- **Impact:** Day 6 code rests on nothing from the missing commits. `src/domain`, `engine.ts`,
+  `remoteGateway.ts`, `fakeGateway.ts`, `architecture.md`, tickets 01 and 02 are untouched in
+  `302c980..HEAD`, and the step-4 branch never touched `features/sync-engine.md`. The stale state reached
+  three places, all records, and all are now corrected: the Day 6 "still waiting" line (corrected in the
+  new entry), `sync-engine.md:201` (corrected in place), and the Day 6 push-range report. That report
+  was "empty" against `origin/main`, while two unpushed docs commits sat on the sibling branch. Had
+  Badrish green-lit a push from it, the amendment would have been left behind. The Day 5-later
+  builder lessons (push by SHA, don't park on a background agent) were missing from his reading, but the
+  brief carried both, and Day 6 neither pushed nor parked.
+- **Logbook marker Claude called stale:** `.agent-locks/c7007023e3c6.since` = main checkout,
+  builder + operations, 16:35:24. That is the Day 4-later session (`904dea6`, 16:35:38), which **is on
+  `main` and in the journal**. The main checkout's `JOURNAL.md` mtime is 18:22:10 (the ff to `302c980`), newer
+  than the marker, and the warn log stopped listing it as owed from 18:36. So Claude's "journal older than
+  16:35 work, living on unmerged branches" is **wrong**. The marker is a leftover that only the Stop gate
+  deletes, not a debt.
+- **Gate, my own runs:** typecheck 0, lint 0, `npm test` 715/715, `npm run test:emulator` 72/72 (exit 0).
+  The wrapper killed a leftover java listener on 8080, and the port was free afterwards.
+- **Brief items:** `includeMetadataChanges: true` with empty and non-empty accounts plus the offline
+  cases. `complete` comes from `snapshot.docs`, and removals arrive as `doc: null`. `mapPushError` →
+  `PermanentPushError`, with a rules denial reaching both gateway and engine as permanent.
+  `assertWireDoc` runs on the handed object, with a control, including the Conflict copy. The write-path
+  guard has negative controls. Engine clean-sync and conflicting-edits run on the emulator. Rules have
+  22 `assertFails` and 15 `assertSucceeds`, the Conflict copy is accepted, and a tenth field is denied.
+  Rules are not deployed. The corrections carried forward are intact by construction, because
+  engine and domain are unchanged.
+- Lockfile churn (+11k/−3k lines): 614 packages added, 0 changed, 0 removed (`firebase-tools`,
+  `rules-unit-testing`). Not a drift.
+- Not re-run: the 16-mutant claim. Accepted on the record, which names the equivalent survivor and its check.
+
+### Finding for Claude (tooling, not the org)
+- The Day 6 worktree's reflog says "Created from **refs/remotes/origin/main**", not local `main`. So
+  fast-forwarding local `main` alone does **not** protect the next session: a new worktree still starts
+  without unpushed work. Either the push lands first, or the next worktree is cut from `ca26496` (or later).
+
+### Recommended close-out order (Badrish's word needed only for 1)
+1. Badrish approves the push of `302c980..ca26496`, or of a later tip if this notebook is committed first.
+   Builder pushes by SHA and checks `origin/main`.
+2. Main checkout: `git merge --ff-only <pushed tip>` (clean tree, ff possible).
+3. Retire `notemaker-builder-step-4-7c1d55`: `git worktree remove`, then `git branch -D`. `-D` is required
+   because the cherry-picks changed the hashes. Content was verified above.
+4. The stale marker clears itself at the next Stop in the main checkout. Otherwise Claude can delete it.
+5. The Day 6 worktree is retired after 1 and 2.
+
+### For next time
+- Next session: confirm `git branch --no-merged main` is empty and that the worktree base includes `ca26496`.
+- Still open, cosmetic: the "placeholder rules" test title, the `.firebaserc` gitignore comment.
+- Mathematician's two follow-ups (date/time hint, epoch-ms test) belong to the editor/UI steps. Check they land.
+
 ## 2026-09-17 — Ticket 03 line 118: "missed" on Day 5? No. Done, then stranded on a branch
 
 **Verdict: blocked on the record, not on the work.** The amendment was made on Day 5. It never

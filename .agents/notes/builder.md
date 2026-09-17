@@ -2,8 +2,14 @@
 
 ## 2026-09-17 (Day 6, later) — I reported finished work of my own as open
 
-**At the start of every session, run `git branch --no-merged main` and report what it shows,
-before anything else** (Overseer's recommendation). A worktree cut from `main` can't see commits
+**At the start of every session, before the push report, run both of these and report what they
+show** (Overseer's recommendation, sharpened the same day):
+```
+git branch --no-merged main
+git log --branches --not origin/main --oneline
+```
+Take the push range from the second command, not from `origin/main..HEAD`, which is blind to
+other branches. When the brief and the logbook disagree, check the other branches first. A worktree cut from `main` can't see commits
 that live only on another branch, and neither can the logbook in it.
 
 How it looked from my side: the Day 6 brief said the ticket 03 line "was amended on Day 5", but
