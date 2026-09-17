@@ -1,5 +1,42 @@
 # Builder's notebook — NoteMaker
 
+## 2026-09-17 (Day 5) — step 4: the brief's own sentence was the bug, and my check lied twice
+
+**Badrish's brief said to adopt from `lastServerState` once `initialSyncCompletedAt` is set.** I
+built nothing on that until the Mathematician had seen the sequencing, and he found the flaw I had
+only half seen. The flag is persisted, but the map lives in memory, so it's empty at every app open.
+Keyed that way, the first adopt of the session deletes the row. I had noticed the hole and proposed
+a push gate. He replaced it with a simpler rule: key the view on *this session's* first complete
+batch. He also found something I hadn't looked for at all: Firestore delivers an **empty
+from-cache snapshot** when the app opens offline. Treated as complete, that one batch would have
+wiped every clean row and stamped initial sync. Lesson, sharper than "ask him": **when a rule joins
+persisted state to in-memory state, ask what it does at the first instant of a new session.**
+That instant is where the two disagree.
+
+Two slips of my own, both caught before the record:
+- **A green walk that could see almost nothing.** The first two-engine walk checked content only
+  at the end. It caught 1 of 5 mutants and took 114 s. When I checked content at each step instead,
+  it threw a *false* positive: a type, delete, lost-delete-adopt sequence finished inside one
+  settle, so the check never saw the tombstone. That was a problem in the check, not the engine.
+  Record every tip and tombstone **at the moment of the act**, not after a settle. It now catches
+  5 of 10 mutants. It is a supplement. The engine rules each have their own targeted test.
+- **`setTimeout(0)` settles made the suite 30× slower** than `setImmediate`. Everything here runs
+  on microtasks, so one macrotask per round is all a settle needs.
+
+My mutation-script patch silently dropped three entries (Python escapes inside a heredoc).
+`assert src.count(old) == 1` on every pattern before running any of them is what caught it. Keep
+that assert first, not inside the loop.
+
+Dead ends, not to re-walk:
+- A **push gate** until the first snapshot. It's safe but unnecessary, and it holds every edit for
+  the whole corpus download.
+- **Releasing the gate on timeout.** Two flights from the same device on one Note write spurious
+  Conflict copies of the user's own text.
+- **Arming backoff at the timeout.** The gated Note can't use the retry, and the late failure
+  counts twice.
+- **An engine-only mutex without a serialising store fake.** The editor's `store.put` would still
+  interleave with a commit in the fake, and IndexedDB never allows that.
+
 ## 2026-09-17 (later) — three slips, one shape: I wrote a number from a list, not from the tool
 
 The mutant count (wrote nine, listed ten) and the push range (`0e32dce..ec664aa` for a seven-commit

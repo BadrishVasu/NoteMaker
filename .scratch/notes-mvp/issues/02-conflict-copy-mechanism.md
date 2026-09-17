@@ -333,6 +333,34 @@ too narrow. Adopting from it drops a copy's `conflictOf`/`conflictBase` (and the
 next clean push of that row would erase `conflictBase` on the server. Each entry holds the **whole
 `NoteDoc`** — see `ServerState` in `src/domain/note.ts`.
 
+**Correction, 2026-09-17 (mathematician, Builder's step-4 questions):** two sentences below are
+wrong. "The map rebuilds from the first snapshot before any push can matter" is not enforced by
+anything, and "falling back to the transaction read only while 03's `initialSyncCompletedAt` is
+unset" keys an **in-memory** map to a **persisted** flag: on every app open after the first, the map
+is empty while the flag is set, so an adopt deletes the local row until the listener delivers. That
+loses no data (every adopt path has our content on the server, in a copy, superseded by a
+descendant, or is a lost delete by design), but the Note vanishes, indefinitely if the listener
+never delivers. Read the fix as:
+
+- **The discriminator is per subscription, in memory:** *this listener has applied a complete
+  batch*. Before it, adopt from the transaction read; after it, from `lastServerState`, where an
+  absent entry means gone. Safe before it because the first complete batch has not been applied yet
+  and, applied against every row, corrects any row the read left stale. The divergence above needs
+  the listener to have *already* delivered something newer. No push waits on the listener.
+  Resubscribing (or signing out) clears the flag and the map. `initialSyncCompletedAt` is a UI fact
+  only.
+- **A batch is complete only if `metadata.fromCache === false`.** Offline at app open, the listener
+  fires an *empty* snapshot with `fromCache === true`, even on `memoryLocalCache()`. Treated as
+  complete, it deletes every clean row (cell 3) and stamps `initialSyncCompletedAt`. Subscribe with
+  `includeMetadataChanges: true` so the `fromCache → false` transition is delivered even for an empty
+  corpus. Process the first complete batch against the full `snapshot.docs`, not `docChanges`, which
+  are relative to the prior cached snapshot and can omit documents. A `fromCache` batch is no
+  evidence of connectivity.
+- **`lastServerState` is written only after the snapshot's store transaction commits.** A failed
+  apply resubscribes, because the listener will not redeliver that batch.
+- **The adopt view is read at commit time**, in the same exclusive section as the rows it adopts
+  into, never as of `beginPush`, which is strictly staler.
+
 **Fix.** Keep an in-memory `lastServerState: Map<noteId, {rev, title, titleIsCustom, body,
 deletedAt}>`, updated by **every** snapshot in **every** cell — including for dirty rows, where
 nothing else about the row changes. This is exactly what this ticket already asked for with

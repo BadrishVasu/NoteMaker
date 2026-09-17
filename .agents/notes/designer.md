@@ -234,6 +234,14 @@ to catch and I did not catch it.
 
 Overseer caught the doc contradicting itself: table rows still put `PushOutcome` application in `engine.ts` after Builder moved it to pure `commitPush`. Fixed those plus four stale spots the grep turned up (port sketch, the `decide`-gets-`lastServerState` paragraph, `ServerState`'s `Pick` shape, the fallback sentence); kept Builder's three edits as written. Lesson: my port sketch named a `PushOutcome` type nobody ever defined — an undefined name in a design doc is a placeholder, and it drifted exactly as one would.
 
+### 2026-09-17 (later) — architecture.md brought in line with step 4 (5343d58)
+
+Builder asked; six settled decisions, none mine to reopen. Changed: the port sketch (now `SnapshotBatch`/`PushResult`, hedge dropped), a new listener-amendment paragraph under it, the module tree (`lastServerState.ts` gone — it's a `Map` in `engine.ts`; injected `Clock` + ESLint ban noted), the `lastServerState` section (adopt-view ruling added, my "rebuilds before any push can race it" line struck through, not deleted), the Read data-flow line, two table rows, the branch-vs-condition sweep sentence, and the Builder's gap-3 addendum with his leave (marked as amended by me).
+
+**The mistake that was mine:** "rebuilds itself from the first batch of snapshots before any push can race it" was an ordering claim I asserted and nothing enforced — no push gate ever existed, and Firestore's empty from-cache first snapshot makes "first batch" meaningless anyway. Then the fallback rule keyed the adopt view on `initialSyncCompletedAt`, a *persisted* flag, guarding an *in-memory* map. Different lifetimes: flag survives the restart, map doesn't, so every Note read as gone at app open. **Check: any condition that guards a piece of state must have the same lifetime as that state.** Third reasoned-not-checked claim of mine the Mathematician has corrected; keep sending them.
+
+Dead end, do not reinstate: gating pushes until the listener's first complete batch. Not needed — the adopt view falls back to the transaction read — and it would stall the Outbox for the entire offline case this app exists for.
+
 ### Testable seams I named for the Builder and for ticket 09
 
 `NoteStore` port (contract suite run against a fake and against `idb` — this is how 09 gets a second

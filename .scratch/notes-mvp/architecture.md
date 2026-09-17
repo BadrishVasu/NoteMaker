@@ -25,26 +25,43 @@ throwaway spike. The implementation only inherits the proof if the implementatio
 shape: pure decision logic, no I/O. So the port is shaped to make that possible:
 
 ```ts
-// sync/remoteGateway.ts — the port. This file imports nothing from firebase.
-// PushAction, TransactionRead and Flight are defined in domain/reconcile.ts (step 3, landed) —
-// not restated here. PushAction: write (clean/create/recreate) | landed | adopt | conflictCopy.
+// sync/remoteGateway.ts — the port. Imports nothing from firebase. Signatures only; the file
+// itself (step 4, landed) carries the doc comments, PermanentPushError and assertWireDoc.
+// PushAction, TransactionRead and Flight live in domain/reconcile.ts.
+
+interface SnapshotBatch {
+  fromCache: boolean                               // Firestore's metadata.fromCache
+  complete: boolean                                // first fromCache === false batch; carries the FULL collection
+  changes: { id: NoteId; doc: NoteDoc | null }[]   // null = gone
+}
+interface PushResult { action: PushAction; read: TransactionRead }  // the committed attempt's
 
 interface RemoteGateway {
-  subscribeNotes(uid: string, onDocs: (docs: NoteDoc[]) => void): Unsubscribe
-  runPush(
-    uid: string,
-    flight: Flight,                                          // reads {flight.noteId, flight.copyId}
-    decide: (read: TransactionRead) => PushAction,           // ← reconcile's `decide`, flight closed over
-  ): Promise<{ action: PushAction; read: TransactionRead }>  // the committed attempt's, not a retried one's
+  subscribeNotes(uid: string, onBatch: (batch: SnapshotBatch) => void, onError: (error: unknown) => void): Unsubscribe
+  runPush(uid: string, flight: Flight, decide: (read: TransactionRead) => PushAction): Promise<PushResult>
 }
 ```
 
 `decide` **is** `domain/reconcile.ts`'s `decide`. The Firestore implementation runs it inside
 `runTransaction` and translates the returned `PushAction` into `transaction.set` calls. It returns
 the committed attempt's action *and* read, because the engine needs both after the transaction:
-the action for `commitPush`, the read as the adopt view before `initialSyncCompletedAt` (02 defect
-1). *(Return shape reconciled 2026-09-17 to what `commitPush` consumes; the earlier sketch named an
-undefined `PushOutcome`. The gateway is step 4 — the Builder confirms or amends it there.)* The fake
+the action for `commitPush`, the read as the adopt view until this session's listener has applied a
+complete batch (02 defect 1; see `lastServerState` below). *(Return shape confirmed by the Builder at
+step 4, 2026-09-17.)*
+
+**The listener side was amended at step 4** (Builder, on the Mathematician's `fromCache` finding).
+The original `(docs: NoteDoc[]) => void` carried neither ids nor removals. Worse, Firestore opening
+offline delivers an **empty from-cache snapshot even under `memoryLocalCache()`**, so "a snapshot
+arrived" is not evidence of anything. Three rules follow, all in `sync/engine.ts`:
+
+- Only a **complete** batch may treat a known-but-absent document as gone or stamp
+  `initialSyncCompletedAt`. Every other batch reports removals explicitly as `doc: null`.
+- Only a **server-backed** batch (`fromCache === false`) resets backoff or wakes pushes.
+- Every object handed to a transaction passes **`assertWireDoc`** — decision #5's `LocalNote` leak
+  guard, run on the write path itself rather than on `toNoteDoc`'s output. A gateway failure
+  retrying cannot fix is thrown as **`PermanentPushError`**; anything else is transient.
+
+The fake
 implementation runs it against an in-memory `Map` with a hook that lets a test interleave a second
 device between the read and the write. **Ticket 09 gets its second device as a second engine
 instance, not a second browser** — which is the difference between sync tests that run in
@@ -89,12 +106,12 @@ src/
     remoteGateway.ts   the port (above)
     firestoreGateway.ts  ONLY file importing firebase/firestore
     fakeGateway.ts       in-memory server with interleaving hooks
-    engine.ts            the loop; owns backoff, owns lastServerState (below), the per-Note in-flight
-                          gate, and the choice of adopt view it hands commitPush; applies the
-                          RowWrite[] that domain/ returns and derives none itself; consults no
-                          clock, no navigator.onLine
-    lastServerState.ts   Map<noteId, NoteDoc> (whole doc — corrected 2026-09-17), in-memory only —
-                          ratified below, this is new since 03 closed
+    engine.ts            the loop; owns backoff, the per-push timeout, the per-Note in-flight gate,
+                          lastServerState (a Map<noteId, NoteDoc> inside this file — no module of
+                          its own, step 4), and the choice of adopt view it hands commitPush;
+                          applies the RowWrite[] that domain/ returns and derives none itself.
+                          Time arrives as an injected Clock; an ESLint rule forbids Date, timers,
+                          performance and navigator in this file
     corpus.ts            in-memory whole corpus + subscribe(); the UI's single read surface
 
   platform/     browser and vendor glue, thin
@@ -122,20 +139,29 @@ dirtiness, and asked me to ratify where it lives since 03 specified the row as "
 `pendingRev`, nothing else."
 
 **Ratified: in-memory only, owned by `sync/engine.ts`, not persisted, and not part of the store
-row.** This does not reopen ticket 03's stored schema — 03's own reasoning already covers it: 03
-carries no resume token and re-reads the whole subcollection on every app open, so on a fresh tab
-`lastServerState` rebuilds itself from the first batch of snapshots before any push can race it. The
-only place it would matter un-rebuilt is mid-session after a conflict branch, which is exactly the
-case the map exists to fix. Persisting it would be state that can silently go stale across a
-restart for no benefit `store/` doesn't already provide by other means; keeping it in memory means
-it is always either correct or freshly empty, never wrong.
+row.** This does not reopen ticket 03's stored schema: 03 carries no resume token and re-reads the
+whole subcollection on every app open, so the map refills every session. Persisting it would be
+state that can silently go stale across a restart; in memory it is always either a whole picture or
+known not to be one.
 
-Consequence for the module table below: the map read happens in `engine.ts`, and the pure function
-receives the entry as an argument. **Corrected 2026-09-17:** that function is `commitPush`, not
-`decide` — `decide` reads only the transaction; the server view is needed where a row *adopts*, which
-is local bookkeeping after the transaction. The engine passes `commitPush` the `lastServerState`
-entry, or the transaction read while `initialSyncCompletedAt` is unset (the appendix's fallback
-rule); `commitPush` does not know which it got.
+~~On a fresh tab `lastServerState` rebuilds itself from the first batch of snapshots before any push
+can race it.~~ **Struck 2026-09-17 — that was never guaranteed, and nothing enforces it.** Pushes are
+not gated on the listener, and the first batch may be an empty from-cache one. The argument that
+holds is the adopt-view rule below: an empty map is never *read* as a picture of the server.
+
+Consequence: the map read happens in `engine.ts`, and the pure function receives the entry as an
+argument. That function is `commitPush`, not `decide` (corrected 2026-09-17) — `decide` reads only
+the transaction; the server view is needed where a row *adopts*, which is local bookkeeping after
+the transaction. `commitPush` does not know which view it got.
+
+**The adopt view — Mathematician's ruling, 2026-09-17.** Chosen at **commit time, inside the engine's
+exclusive section**: the `lastServerState` entry (absent means gone) once **this session's** listener
+has applied a complete batch; the transaction read before that. There is no push gate.
+**`initialSyncCompletedAt` does not decide it** — the previous rule keyed on it, and because that flag
+persists across sessions while the map starts empty, it read every Note as gone and deleted rows at
+app open. `initialSyncCompletedAt` is a UI fact only (the four first-load screens). The map changes
+only after a batch's store transaction commits; a failed apply resubscribes, which resets the
+session's completeness. Rationale in `src/sync/engine.ts`'s header.
 
 ## Data flow — one direction each way
 
@@ -143,8 +169,8 @@ rule); `commitPush` does not know which it got.
 `saveNote()`: resolve title (`domain/title`), mint `pendingRev`, `store.put(row)` **first**, then
 update `corpus`, then `tabChannel.post(noteId)` → engine wakes and drains the Outbox.
 
-**Read** — `gateway.subscribeNotes` → per doc `applySnapshot(localRow, serverDoc)` → `store.put` →
-`corpus` → React re-renders.
+**Read** — `gateway.subscribeNotes` → per `SnapshotBatch` change `applySnapshot(localRow, id,
+serverDoc | null)` → one store transaction → `lastServerState` → `corpus` → React re-renders.
 
 Both paths converge on the store and the corpus. **No React component ever imports anything from
 `sync/` other than `corpus.ts`, and nothing anywhere reads Firestore for display.** The store is
@@ -157,14 +183,14 @@ a crash between the two loses a re-render, never a keystroke.
 |---|---|
 | 02: every Note write via `runTransaction` | `firestoreGateway.runPush`, the sole firebase importer |
 | 02: `baseRev` only advances to a rev the listener delivered (clean) or this device pushed | Listener: `domain/applySnapshot.ts` (the 14-cell table). Push: `domain/reconcile.ts` `commitPush` (pure → `RowWrite[]`). `engine.ts` applies both, deriving neither (moved 2026-09-17, `sync-engine.md` Decisions) |
-| 02: snapshots never overwrite a dirty body, but do always record `lastServerState` | `domain/applySnapshot.ts` (pure), `sync/lastServerState.ts` (in-memory, owned by `engine.ts`) |
+| 02: snapshots never overwrite a dirty body, but do always record `lastServerState` | `domain/applySnapshot.ts` (pure), `lastServerState` (an in-memory `Map` inside `sync/engine.ts`) |
 | 02 appendix: copy id/rev keyed off the flight token, not existence+pristine | `domain/conflictCopy.ts` |
 | 02 appendix: Outbox slot migrates only onto the copy this push just wrote | `domain/reconcile.ts` `commitPush`, `conflictCopy` case; `engine.ts` applies the writes (moved 2026-09-17) |
 | 02 appendix: per-Note pushes parallelise freely; one in-flight push per Note | `engine.ts` — a `Map<noteId, Promise>` gate, nothing more |
 | 02: editor follows the content, not the id | `corpus.ts` emits a redirect event; `Editor` does `history.replaceState` (05 §conflict redirect) |
 | 03: whole corpus in memory, no queries | `corpus.ts`; `projection.ts` filters arrays |
 | 03: Outbox is `pendingRev !== null` | `LocalNote`, one row, one atomic put |
-| 03: `initialSyncCompletedAt` | `store` meta; read by `EmptyStates` to pick between four screens |
+| 03: `initialSyncCompletedAt` | `store` meta, stamped by `engine.ts` on a complete batch; read by `EmptyStates` to pick between four screens. A UI fact only — it gates no push and no adopt view |
 | 03: `navigator.storage.persist()` | `platform/persistStorage`, called on first successful sign-in |
 | 01: title rules and the one-way latch | `domain/title.ts`; `TitleField` renders the latch (05) |
 | 05: save flushes on blur/visibilitychange/pagehide | `platform/lifecycle.ts`, wired once in `AppShell` |
@@ -393,19 +419,27 @@ I asked for this to be blessed rather than inherited. Nobody has contested it, i
 internal to one file, and reversing it costs one function — so I am taking it and recording it here
 so nobody has to re-derive it:
 
-- **Wake sources:** a local edit; `visibilitychange → visible`; **snapshot delivery**; and a backoff
-  timer. Snapshot delivery is the one honest connectivity oracle this design permits — it is
-  evidence the transport is up rather than a claim about the network, which is the distinction
-  ticket 02 removed `navigator.onLine` to protect.
-- **Backoff:** 1s, doubling, capped at 60s. Reset on any successful push **or** any delivered
-  snapshot.
-- **Hard per-push timeout, 10s.** `runTransaction` retries internally and under a flaky connection
-  can hang far past a user's patience. Without a timeout one wedged push holds its Note's gate
-  indefinitely. With per-Note parallelism this no longer blocks the whole drain, which is a second
-  reason the appendix's answer was worth having.
+*Amended 2026-09-17 at step 4 (Designer, at the Builder's request): "snapshot delivery" narrowed to
+server-backed delivery, and the timeout no longer releases the gate. The code is `sync/engine.ts`.*
+
+- **Wake sources:** a local edit; `visibilitychange → visible`; **server-backed snapshot delivery**
+  (`fromCache === false`); and a backoff timer. That delivery is the one honest connectivity oracle
+  this design permits — it is evidence the transport is up rather than a claim about the network,
+  which is the distinction ticket 02 removed `navigator.onLine` to protect. A from-cache delivery is
+  not that evidence: Firestore produces one, possibly empty, when it opens offline.
+- **Backoff:** 1s, doubling, capped at 60s. Reset on any successful push **or** any server-backed
+  snapshot. The backoff timer is an *automatic* wake: it re-subscribes a failed listener, but with
+  `Auto sync` off it pushes nothing.
+- **Per-push timeout, 10s — it surfaces, it does not release.** `runTransaction` retries internally
+  and under a flaky connection can hang far past a user's patience, so at 10s the engine reports a
+  `push-timeout` problem. **The Note's gate stays held until the gateway settles**, and a late result
+  is committed normally. The original wording had the timeout free the gate; the Mathematician found
+  that lets two flights from one device race on one Note — an interleaving the model never checked —
+  and write spurious Conflict copies of the user's own text. Per-Note parallelism means a wedged push
+  still blocks only its own Note.
 - **`Sync Now` (ticket 05) is a fifth wake source** that additionally resets the backoff timer, and
-  with `Auto sync` off it is the *only* one. The setting gates the trigger; it never gates the
-  `pendingRev` mint, the mirror write, or the guard predicate.
+  with `Auto sync` off it is the *only* one that pushes. The setting gates the trigger; it never gates the
+  `pendingRev` mint, the mirror write, the listener, or the guard predicate.
 
 ### Naming, binding on every surface — Badrish, 2026-08-26
 
@@ -688,8 +722,9 @@ than as a list of branches, which is structurally immune to a branch being added
 is the antidote, and it is the form to prefer for any rule added to this design from here. Two
 narrower rules key off a *condition* rather than a branch and are fine as written: `toLocalNote` is
 valid only for an insert into an absent row (decision #8), and the adopt view `commitPush` receives
-falls back to the transaction read only while `initialSyncCompletedAt` is unset (was "`decide`
-falls back"; corrected 2026-09-17 — the engine chooses the view, `commitPush` consumes it).
+is the transaction read until this session's listener has applied a complete batch (corrected twice
+on 2026-09-17: first "`decide` falls back" → the engine chooses; then the condition moved off the
+persisted `initialSyncCompletedAt`, which deleted rows at app open — see `lastServerState` above).
 
 **This amends ticket 03's "the mirror row is 01's shape plus `baseRev`, `pendingRev`, and nothing
 else."** It does not touch the wire document, the rules, the three equality tests, or the snapshot

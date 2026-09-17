@@ -1,5 +1,56 @@
 # Mathematician — notebook
 
+## 2026-09-17 — NoteMaker, step 4: engine sequencing rulings (Q1–Q4)
+
+Reasoned, not model-checked — no spike this time. Rulings given to Builder:
+
+1. **Q1 adopt view at commit time: correct.** Defect 1's safety argument ("map behind ⇒ a delivery
+   follows") holds at whatever instant the map is read, provided map read + row writes are atomic
+   against snapshot applies (his mutex). A beginPush-time view is strictly staler. Discriminator is
+   read in the same critical section.
+2. **Q2: the hole is real (display, not data), but the gate is the wrong fix.** Discriminator must
+   be an in-memory `sessionComplete` flag ("this listener subscription has applied a complete
+   batch"), NOT persisted `initialSyncCompletedAt`. Before it, adopt from the transaction read — safe
+   because the first complete batch is still to come and corrects any row. No push gate, no
+   first-ever exception. Reset flag + clear map on resubscribe/sign-out. `initialSyncCompletedAt`
+   stays a UI fact. Adopt-deletes pre-batch lose no data (walked all four adopt paths: content is on
+   server, in a copy, superseded by a descendant, or a lost delete by design).
+3. **Missed by everyone so far: `fromCache`.** Offline at open, the listener fires an EMPTY
+   snapshot with `metadata.fromCache === true` even on `memoryLocalCache`. Treated as "first batch
+   is complete" it deletes every clean row (cell 3) and stamps `initialSyncCompletedAt`. Completeness
+   = first batch with `fromCache === false`, needs `includeMetadataChanges: true`, and must be
+   processed against the full `snapshot.docs`, not `docChanges` (changes are relative to the prior
+   cached snapshot and can omit docs). Backoff reset / connectivity oracle likewise server-only.
+4. **Q3 hold the gate on timeout: correct.** Builder's trace is real. Releasing puts two flights of
+   one (device, Note) concurrent — outside the checked model. Hand-walked both commit orders: spurious
+   copies (incl. a copy of STALE text when the late flight re-runs after the newer one lands), no loss
+   found — but unverified, so don't go there. Late success committed normally is right (Gap A/B
+   covers typing). Cost: a truly wedged runTransaction pins one Note for the session; accept.
+   Note: lost-response + typing already yields a spurious copy inside the model — same class.
+5. **Q4 terminates**: every success either cleans the row or leaves it dirty only under a changed
+   pendingRev, except conflictCopy typed&&!free → [], whose next flight is !typed and adopts. ≤2
+   pushes per edit burst. Real problems: global backoff reset-on-any-success hot-loops a Note with a
+   PERMANENT error (permission-denied, invalid-argument e.g. >1 MiB doc) — classify like the id-length
+   error; and immediate re-drain = one transaction per RTT under continuous typing unless edits are
+   debounced upstream.
+
+**Status:** all built by Builder in 5343d58 (port `SnapshotBatch {fromCache, complete, changes}`,
+generation guard on resubscribe, no backoff armed at timeout, permanent errors parked). 02 Defect 1
+correction folded in by me, uncommitted, as a second dated block after the first. 03 line 118 is a
+grilling record: Builder is taking its amendment to Badrish, not edited. Still open: the
+architecture.md / sync-engine.md / reconcile.ts wording below.
+
+02 text to change (02 now DONE): Defect 1 "falling back … while `initialSyncCompletedAt` is unset" and "rebuilds
+from the first snapshot before any push can matter" → the session flag + fromCache rule. Same
+phrase in architecture.md (~45, 137, 691), sync-engine.md (~125), reconcile.ts commitPush doc.
+
+### Dead ends — do not re-walk
+- Gating push start on first batch: sound but unnecessary once the discriminator is per-session;
+  it also delays pending edits at open by the whole corpus download.
+- Safe gate release via "treat abandoned flightRevs as base": fixes flight2's copy, but the late
+  flight1 re-run then reads R2 and writes a spurious copy of stale text. No cheap safe release;
+  `terminate()` doesn't give one either (commit RPC may already be on the wire = lost response).
+
 ## 2026-09-17 — NoteMaker, step 3 review: Builder's commitPush cells vs appendix 3
 
 Spike scripts (`model.js`, `basecontent.js`) are **gone** from the scratchpad — checked by

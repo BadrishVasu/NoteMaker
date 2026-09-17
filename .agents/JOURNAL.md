@@ -2,6 +2,46 @@
 
 Newest entry first. Append only.
 
+## 2026-09-17 (Day 5) — step 4: engine against fakeGateway; the adopt-view rule corrected
+**Worked:** builder, mathematician, designer
+
+**Moved:**
+- **Push range, checked first.** `git rev-parse` gave `ec664aa..904dea6`, eight commits, all docs except
+  `c63921a` (code). That's two more than the Day 4 entry listed, because it also includes `7ae9c55`
+  (Overseer notebook) and `904dea6` (the later Day 4 entry), and it matches that entry's
+  `ec664aa..HEAD`. Reported to Badrish, not pushed.
+- **Step 4 built, test first, `5343d58`:** `sync/remoteGateway.ts` (port), `sync/fakeGateway.ts`,
+  `sync/engine.ts`. Two engines with their own memory stores share one `FakeServer`, and a hook runs
+  between each transaction's read and its write. `runPush`'s `{ action, read }` is **confirmed**.
+  `subscribeNotes` is **amended** to `SnapshotBatch { fromCache, complete, changes }`, because the
+  sketch could carry neither ids nor removals. `memoryNoteStore` now serializes transactions the way
+  IndexedDB does. ESLint bans clocks, timers and `navigator` in `engine.ts`. Gate after the last
+  code change: typecheck 0, lint 0, **697/697**. **23 mutants** each turn the suite red, re-run
+  against the committed code.
+- **The Mathematician corrected the brief's adopt-view rule.** "Adopt from `lastServerState` once
+  `initialSyncCompletedAt` is set" ties an in-memory map to a persisted flag. At every app open the
+  map is empty while the flag is set, so Notes disappear until the listener delivers. No content is
+  lost; they are gone from the screen. The view now depends on **this session's first complete
+  batch**. He also found that Firestore delivers an **empty from-cache snapshot when the app opens
+  offline**. If treated as complete, that batch would delete every clean row, so only a
+  `fromCache === false` batch counts as complete. A timed-out push surfaces but keeps its Note
+  gated. Permanent failures are parked instead of looped. All of these are built and tested. He
+  added a dated correction to 02 Defect 1, and the Designer brought `architecture.md` into line.
+  The Designer has no objection to 02.
+
+**Open:**
+- **Unpushed:** as `git rev-parse` gives it in Builder's block to Badrish after this commit.
+- **Ticket 03 line 118** says `initialSyncCompletedAt` is set on "the first snapshot". It should say
+  the first *server-backed* snapshot. That ticket is Badrish's resolved record, so I put it to him
+  and did not edit it.
+- **Step 5 owes:** `firestoreGateway` subscribes with `includeMetadataChanges: true` (otherwise an
+  empty account never completes) and builds the complete batch from `snapshot.docs`. It maps error
+  codes to `PermanentPushError` and calls `assertWireDoc` before every `transaction.set`.
+- The `architecture.md` header still reads "proposed — awaiting Builder's response". The Designer
+  left it on purpose and will change it if asked.
+
+**Badrish:** "Builder — NoteMaker Day 5. Build step 4." Push rule unchanged — his word per range.
+
 ## 2026-09-17 (later) — the Overseer's Day 4 record findings, closed; Day 5 prompt written
 **Worked:** builder, designer, operations
 
