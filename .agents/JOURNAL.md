@@ -2,6 +2,37 @@
 
 Newest entry first. Append only.
 
+## 2026-09-17 — Day 4: step 3 built; the Mathematician corrects his own appendix twice
+**Worked:** builder, mathematician
+
+**Moved:**
+- **Pending-push check first.** `origin/main..main` was three commits, all docs: `721e875`,
+  `5fb08d5`, `475d29f`. Reported to Badrish; not pushed.
+- **Step 3 built, test first:** `domain/reconcile` (`beginPush` / `decide` / `commitPush`),
+  `domain/applySnapshot` (14 cells), `domain/conflictCopy`, `domain/edit`. The fixture
+  `src/test/syncHarness.ts` remembers content and parent per rev. Gaps A/B/C run the
+  Mathematician's traces. Seeded walks (3,200 × 30, coalescing and in-order stale delivery) check
+  lineage, P-INV, P-CB, P-ABS, P1b and local P1 every step, then convergence. Nine rule mutants each
+  turn it red; the first run of that check found the suite could not see adopt-over-typing, which is
+  why P1 exists. Gate: typecheck 0, lint 0, **231/231**.
+- **Brought the Mathematician in on one disagreement and seven unstated commit cells.** He ruled
+  the code right on all of them. Two errors were his: appendix 3 said the migrated row's
+  `baseContent` equals the copy's `conflictBase` (it's the copy's *content*), and his defect-1
+  `lastServerState` shape was too narrow, which would have erased a copy's `conflictBase` on
+  its next push. Both corrected at the source: 02, `architecture.md`, `features/sync-engine.md`.
+  His Gap C continuation cannot run as written; it forks before the first `cpush(1,N)`, as I read it.
+
+**Open:**
+- **Unpushed, `origin/main..main`, six commits:** `721e875` docs · `5fb08d5` docs · `475d29f`
+  docs · `c63921a` code · `916507a` docs · and this entry's commit, docs. Nothing a user sees
+  changes: no app entry imports `domain/` yet.
+- Step 4 owes: the engine's choice of adopt view (`lastServerState` vs the transaction read before
+  initial sync), and surfacing `ConflictCopyIdTooLongError` rather than stalling one Note silently.
+- `prompt` update bar still untested (first testable at step 6).
+
+**Badrish:** "Build step 3: `domain/reconcile`, `applySnapshot` and `conflictCopy`, as pure units,
+test first." Push rule unchanged — his word per range.
+
 ## 2026-09-16 (audit) — reconstructed: the 09-01 to 09-06 "unwritten Designer sessions"
 **Worked:** builder. Reconstructed today from transcripts, not memory; covers 2026-09-01 to 2026-09-06.
 

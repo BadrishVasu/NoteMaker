@@ -1,5 +1,35 @@
 # Builder's notebook — NoteMaker
 
+## 2026-09-17 — step 3: a green property suite is a claim about what it can see
+
+My first harness asserted lineage, P-INV and convergence, and it was green. The mutants were what
+showed me how little that meant. "Adopt the server even though the user typed during the flight",
+which is 02's original data-loss trap, passed all of it: the lost text breaks no lineage (the row
+is clean and consistent) and it converges perfectly. Convergence on the wrong content is still
+convergence. I only found out because I ran mutants *before* calling it done. Rule to keep:
+**every property suite gets a mutant per rule it claims to protect, and a surviving mutant is a
+missing property, not a lucky pass.** P1 (content preservation, via a parent-per-rev map) is what
+closed it.
+
+Two dead ends not to walk again:
+- **P1 as "the replacement row has the same content" is too strict.** A fast-forward adopts from a
+  `lastServerState` that lags the transaction read, so the row briefly holds older content while
+  the identical content is already on the server. Count it as kept if a descendant *or identical
+  content* was ever on the server.
+- **A shared drain loop across delivery modes.** `snap` only dequeues in `queued` mode, so the
+  drain spun forever in `current` mode and took down a vitest worker. Mode-specific loops stay
+  mode-guarded.
+
+Also a process slip: my mutation script backed up two of the three files it mutated. The defect-2
+mutant (`mayWriteCopy => true`) stayed on disk until `git status` plus a grep caught it. Back up
+every file a mutant touches, and diff all of them afterwards.
+
+On the Mathematician: sending him the disagreement came back with two corrections to *his*
+appendix, and one of them (`lastServerState` too narrow) was a real data-loss defect nobody asked
+about. I only found that one because I was building adopt against real types. The appendix is
+still the spec, but a spec sentence that the lineage property contradicts gets challenged, not
+implemented.
+
 ## 2026-09-16 (later) — "the site is up" is not "the deploy landed"
 
 After a push whose bundle doesn't change, checking the live host proves nothing. Operations checked
