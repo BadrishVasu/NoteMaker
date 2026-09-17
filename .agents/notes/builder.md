@@ -28,6 +28,18 @@ Dead ends:
 - A Python patch written inside a bash heredoc turned `
 ` into real newlines inside a string
   literal. Same class as Day 5's slip. Edit the script file directly instead.
+## 2026-09-17 (Day 5, later) — push by SHA; don't park on a background agent
+
+- I pushed the approved range as `git push origin 302c980:main`, not `HEAD`. His word covered a
+  commit, and there was already a newer local commit on top of it. Pushing by SHA and checking
+  `origin/main` afterwards makes "exactly what he approved" something git enforces, not something
+  I promise. Do it this way every time.
+- **I repeated the 09-16 slip.** I ended a turn "waiting on the Designer" while he ran in the
+  background, and nothing was going to wake me up. The coordinator caught it. The rule I already
+  had ("don't park on a notification") applies to agents as well as to polling. If my next step
+  depends on an agent, run it in the foreground, or keep working and never hand back the turn
+  while I'm waiting on it. Also: the lead agents are singletons. I can't respawn a running
+  Designer, so I reach him through `SendMessage`.
 
 ## 2026-09-17 (Day 5) — step 4: the brief's own sentence was the bug, and my check lied twice
 

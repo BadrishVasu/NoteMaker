@@ -40,6 +40,26 @@ Newest entry first. Append only.
 
 **Badrish:** "Builder, this is NoteMaker Day 6. Build step 5." Push rule unchanged. Deploying
 rules is a separate act.
+## 2026-09-17 (Day 5, later) — step 4 pushed; ticket 03 amended; Day 6 (step 5) prompt written
+**Worked:** builder
+
+**Moved:**
+- **Pushed exactly `ec664aa..302c980`** on Badrish's word, by SHA (`git push origin 302c980:main`),
+  as a fast-forward. Afterwards, `git rev-parse origin/main` = `302c980`. This corrects the entry
+  below: its "Unpushed" line is no longer open.
+- **Ticket 03 line 118 amended** on Badrish's word, in commit `3b442b6`, not pushed:
+  `initialSyncCompletedAt` is stamped by the first *server-backed* snapshot, applied from the full
+  `snapshot.docs`, and it is a UI fact only.
+- Step 5 prompt handed to Badrish for the next session.
+
+**Open:**
+- **Unpushed:** `302c980..HEAD`, which is `3b442b6` (docs) plus this entry's commit (docs). The
+  hashes are listed in Builder's block to Badrish. Each push needs his word.
+- Step 5: `firestoreGateway` + the emulator + `firestore.rules`, which does not exist in the repo yet.
+  Deploying the rules to the live project is a separate call Badrish makes.
+
+**Badrish:** "Builder - push ec664aa..302c980 and amend ticket 03 line 118. Once done, prepare the
+prompt for Step 5 which I will take to next chat session"
 
 ## 2026-09-17 (Day 5) — step 4: engine against fakeGateway; the adopt-view rule corrected
 **Worked:** builder, mathematician, designer
