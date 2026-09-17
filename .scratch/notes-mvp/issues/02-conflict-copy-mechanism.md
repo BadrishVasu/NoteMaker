@@ -328,6 +328,11 @@ clean row *behind* the listener — and no correction follows, because in the co
 surviving Note is deliberately **not** written and so generates no snapshot. The device displays
 stale text indefinitely.
 
+**Correction, 2026-09-17 (mathematician, found by Builder at step 3):** the five-field entry below is
+too narrow. Adopting from it drops a copy's `conflictOf`/`conflictBase` (and the timestamps), and the
+next clean push of that row would erase `conflictBase` on the server. Each entry holds the **whole
+`NoteDoc`** — see `ServerState` in `src/domain/note.ts`.
+
 **Fix.** Keep an in-memory `lastServerState: Map<noteId, {rev, title, titleIsCustom, body,
 deletedAt}>`, updated by **every** snapshot in **every** cell — including for dirty rows, where
 nothing else about the row changes. This is exactly what this ticket already asked for with
@@ -526,7 +531,10 @@ Expanded into the three places the engine touches it:
 3. **Conflict-branch outbox-slot migration.** When the slot migrates onto the copy row *and the user
    typed during the flight*, the migrated copy row takes `baseRev := flightRev` and therefore
    `baseContent := the in-flight content` — the same value that was just written as the copy's
-   `conflictBase`. When nothing was typed the copy row is born clean and `baseContent := null`.
+   *content* (at `rev = flightRev`), **not** its `conflictBase`, which is `noteId`'s fork point.
+   *(Corrected 2026-09-17, mathematician, on Builder's step-3 challenge: this sentence previously
+   said "the copy's `conflictBase`", which contradicts the lineage property and Gap C's "fork point
+   is C3". The step-3 code implements the corrected reading.)* When nothing was typed the copy row is born clean and `baseContent := null`.
    **The designer rules do not mention this transition at all, and it is the dangerous one.**
 
 **No `applySnapshot` cell needs a capture.** Cell 9 is the only cell that moves `baseRev` on a dirty

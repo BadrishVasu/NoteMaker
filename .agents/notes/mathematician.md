@@ -1,5 +1,29 @@
 # Mathematician — notebook
 
+## 2026-09-17 — NoteMaker, step 3 review: Builder's commitPush cells vs appendix 3
+
+Spike scripts (`model.js`, `basecontent.js`) are **gone** from the scratchpad — checked by
+reasoning against the appendix and Builder's harness, not re-run. Verdicts:
+
+1. **My appendix-3 sentence was wrong, the code is right.** Migrated copy row: `baseRev := flightRev`
+   so `baseContent := content at flightRev` = the copy doc's *content*, NOT its `conflictBase`
+   (that is noteId's fork point, content at the flight's baseRev). Lineage forces it. Ticket 02
+   text needs correcting.
+2. **Gap C continuation as written is not executable** (second `cpush(1,N)` with nothing in
+   flight). It forks before the first cpush. Builder's 11-step reading is the trace.
+3. a–g all agree. Notes worth keeping:
+   - 3a: row clean at commit under `conflictCopy` is reachable only with stale (k=2) delivery:
+     create/lose, other device overwrites, retry conflicts, stale cell 9 cleans. `[]` is right;
+     the copy is spurious, not lost, and arrives by listener.
+   - 3b: migrating onto a superseded or dirty copy row clobbers local content. Literal reading is right.
+   - 3c: the eager insert can leave a ghost clean copy row if the copy is purged AND delivered
+     absent between decide and commit. Real purge only takes aged tombstones, so this is the
+     already-accepted purge-race class, healed by 03's reopen re-read. Kept, not guarded.
+   - 3f: the 5-field `lastServerState` was MY defect-1 spec (02 line ~331) and it was a defect:
+     adopting a copy would drop conflictBase, and the next clean push (`toNoteDoc`) erases it
+     server-side. Whole NoteDoc is required.
+- Recommended, not blocking: an in-order lagged delivery mode (k=2) in `syncHarness`.
+
 ## 2026-09-06 — NoteMaker, `baseContent` capture points (ticket 02, third appendix)
 
 Builder sent the designer 2026-09-01 `baseContent` claim rather than building on it. Right call

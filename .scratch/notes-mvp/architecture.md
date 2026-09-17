@@ -71,8 +71,11 @@ src/
     note.ts           NoteDoc (01's nine wire fields), LocalNote = NoteDoc + id + baseRev +
                       pendingRev + baseContent, toNoteDoc/toLocalNote  — see "The types" below
     title.ts          resolveTitle / isDefaultTitle / nextUntitledN   (01 + 05)
-    reconcile.ts      02's three equality tests + the conflict branch → PushAction
-    applySnapshot.ts  the 14-cell table from 02's appendix; pure, takes/returns lastServerState too
+    reconcile.ts      beginPush / decide (02's three equality tests + conflict branch → PushAction) /
+                      commitPush (local bookkeeping, the baseContent capture rule) — step 3
+    edit.ts           recordEdit / newLocalNote: entering the Outbox, capture point 1 — step 3
+    applySnapshot.ts  the 14-cell table from 02's appendix; pure → RowWrite[]; the engine records
+                      the same serverDoc into lastServerState for every cell
     conflictCopy.ts   copyId/rev derived from the flight token (02 appendix defect 2) + conflictBase
     projection.ts     corpus → list view / trash view / search results   (06 lands here)
 
@@ -87,7 +90,7 @@ src/
     fakeGateway.ts       in-memory server with interleaving hooks
     engine.ts            the loop; owns backoff, owns lastServerState (below); consults no clock,
                           no navigator.onLine
-    lastServerState.ts   Map<noteId, {rev,title,titleIsCustom,body,deletedAt}>, in-memory only —
+    lastServerState.ts   Map<noteId, NoteDoc> (whole doc — corrected 2026-09-17), in-memory only —
                           ratified below, this is new since 03 closed
     corpus.ts            in-memory whole corpus + subscribe(); the UI's single read surface
 
@@ -638,7 +641,8 @@ Expanded into the three places the engine touches it:
 3. **Conflict-branch outbox-slot migration — the transition the old rule did not mention at all,
    and the dangerous one.** When the slot migrates onto the copy row *and the user typed during the
    flight*, the migrated copy row takes `baseRev := flightRev` and therefore `baseContent := the
-   in-flight content` — the same value just written as the copy's `conflictBase`. Nothing typed →
+   in-flight content` — the same value just written as the copy's *content* at `flightRev`, **not**
+   its `conflictBase` (corrected 2026-09-17; 02 appendix 3 carries the note). Nothing typed →
    the copy row is born clean, `baseContent := null`. Without this, the copy row carries a
    `baseContent` from before the conflict, and the model reaches a trace where that value is written
    to a real server document as a `conflictBase` **two generations stale**.

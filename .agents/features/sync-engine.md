@@ -1,5 +1,5 @@
 # Feature: Sync engine (Outbox, push, conflict copies)
-Status: not-started
+Status: in-progress
 Owner: builder
 Tickets: [02 · Conflict-copy mechanism](../../.scratch/notes-mvp/issues/02-conflict-copy-mechanism.md),
 [09 · Sync test strategy](../../.scratch/notes-mvp/issues/09-sync-test-strategy.md).
@@ -15,9 +15,14 @@ one.
 ## State
 - [x] Mechanism decided and model-checked — ticket 02
 - [x] Architecture proposed and Builder responded — `architecture.md`
-- [ ] `domain/reconcile` — 02's three equality tests + conflict branch
-- [ ] `domain/applySnapshot` — 02's two model-checked traps as named regression tests
-- [ ] `domain/conflictCopy` — deterministic id, pristine guard, `conflictOf` / `conflictBase`
+- [x] `domain/reconcile` — `beginPush` / `decide` (three equality tests + conflict branch) /
+      `commitPush` (local bookkeeping, the capture rule). `src/domain/reconcile.test.ts`. Step 3,
+      2026-09-17.
+- [x] `domain/applySnapshot` — all 14 cells, one test each; cell 7 keeps `baseContent`; 02's two
+      traps covered (cell 10 no-op; delete-lost never adopts over typing). Step 3, 2026-09-17.
+- [x] `domain/conflictCopy` — flight-token id + rev (defect 2; the pristine guard is **retired**,
+      not built), 1500-byte UTF-8 cap, `conflictOf` / `conflictBase`, P-ABS omission. Step 3.
+- [x] `domain/edit` — `recordEdit` / `newLocalNote`, capture point 1. Step 3.
 - [ ] `sync/engine` — the drain loop, wake sources, backoff
 - [ ] `sync/firestoreGateway` + emulator: real transaction semantics
 - [x] **Ticket 09's import-boundary guard is built and passing** — `src/test/importBoundary.test.ts`,
@@ -29,9 +34,15 @@ one.
       being written wrongly there. Lands with the gateway at step 5.
 - [ ] **The `LocalNote extends NoteDoc` leak guard — lands HERE, at step 4, with `fakeGateway`.**
       Written onto this file three steps early so it survives. Detail under Decisions.
-- [ ] **The `baseContent` capture rule, and the lineage assertion that proves it.** Both land here,
-      not at step 2. Detail under Decisions; the three named regression tests are Gaps A, B and C
-      from 02 appendix 3, each with the Mathematician's own trace as the test body.
+- [x] **The `baseContent` capture rule, and the lineage assertion that proves it** — step 3,
+      2026-09-17. Fixture `src/test/syncHarness.ts` remembers content (and parent) per rev; the
+      lineage assertion, P-INV, P-CB, P-ABS, P1b and a local P1 run after every event. Gaps A, B, C
+      are `src/test/sync.lineage.test.ts`, each titled with and running the Mathematician's trace.
+      Plus seeded random walks (3,200 × 30 steps: both starts, purge on/off, coalescing and in-order
+      stale delivery) driven to quiescence with a convergence check. **Negative controls:** nine
+      mutants of the rules (designer two-point rule, Gap-A-only, nomigrate, cell 7 cleaned, migrate
+      onto any copy row, adopt-over-typing, cell-10 adopt, defect-2 overwrite, conflict-never-adopts,
+      landed-stays-dirty) each turn the suite red. Not a model check — the spike stays his.
 
 ## Decisions
 - Import boundary replaces 02's name list: only `sync/firestoreGateway.ts` may import
@@ -90,7 +101,30 @@ one.
   *`baseContent` equals the content this row's `baseRev` was written with*. That fixture is a
   prerequisite of the reconcile tests, not an extra — without it the capture rule is untested.
 
+- **`commitPush` lives in `domain/reconcile.ts`, not `sync/engine.ts`.** The architecture table put
+  "applying `PushOutcome`" in the engine; that is where the capture rule lives, so it had to be a pure
+  unit for Gaps A/B/C to be step-3 tests. The engine applies its `RowWrite[]`, it does not re-derive
+  them — builder — 2026-09-17
+- **`lastServerState` entries are the whole `NoteDoc`**, not 02's five fields: adopt needs
+  `createdAt`/`updatedAt`/`conflictOf`/`conflictBase`, and the narrow shape would erase a copy's
+  `conflictBase` on its next push. Builder found it, mathematician confirmed it as a defect in his
+  defect-1 fix — 2026-09-17
+- **Capture point 3 = the copy's content at `flightRev`, not its `conflictBase`.** 02 appendix 3's
+  sentence said `conflictBase`; the code did not follow it; mathematician ruled the sentence wrong
+  and it is corrected in 02 and `architecture.md` — 2026-09-17
+- **Commit cells 02 did not state, filled by builder and confirmed by mathematician, 2026-09-17:**
+  row absent or already clean at commit → no writes; a *superseded* copy (decide wrote nothing) is
+  never a migration target; not typed + free target → the clean copy row is inserted eagerly; an
+  adopt whose server view is absent deletes the local row (including the P-ABS shape — the delivery
+  re-inserts it); copy `createdAt = updatedAt =` the in-flight `updatedAt`. Gap C's continuation
+  trace branches from *before* the first `cpush(1,N)` (his confirmation; as written it cannot run).
+
 ## Open questions
+- **Step 4 owes:** which server view `commitPush` adopts from — `lastServerState` once
+  `initialSyncCompletedAt` is set, the transaction read before (02 defect 1) — is the engine's
+  choice and is not tested yet. Also `ConflictCopyIdTooLongError` thrown from `beginPush` would
+  stall that Note's Outbox silently; unreachable in practice (~40 nested conflicts) but the engine
+  must surface it, not swallow it — builder
 - None blocking the engine's own work. One dependency elsewhere:
   - ~~The literal `NoteDoc` / `LocalNote` types~~ — landed as `src/domain/note.ts`, 2026-09-06.
   - Ticket 13's purge must respect appendix cell 7 (dirty row + absent server doc = no-op). Noted on
