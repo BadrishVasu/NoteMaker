@@ -1,5 +1,38 @@
 # Mathematician — notebook
 
+## 2026-09-17 — NoteMaker, step 5: odds of an honest device breaking the 1-day `updatedAt` bound
+
+Reasoned from code (`firestore.rules:27`, `edit.ts`, `conflictCopy.ts:48-49`, `reconcile.ts:153`,
+`engine.ts:91,263`). No spike; nothing to model.
+
+**Invariant that settles the mechanism question:** every `updatedAt` we push is a device wall-clock
+reading taken at or before the push — stamped at edit, or copied verbatim from an earlier stamp
+(Conflict copy takes the flight's; migration keeps `cur.updatedAt`; adopted rows keep the server's,
+which already passed the rule at an earlier `request.time`). `request.time` only grows. So
+`updatedAt − request.time ≤ device skew at the moment of the edit`. Delay (offline days, late
+re-push, retry) only shrinks the excess. **Denial ⇔ the clock was >24 h fast when the edit was made.**
+Nothing in our mechanism can produce it with a correct clock.
+
+- Assumed, flagged: the (unbuilt) UI stamps with `Date.now()` in **milliseconds**. A µs/ns stamp
+  would break every push; seconds would silently pass. One test on the UI caller covers it.
+- Timezone errors cannot cause it (epoch millis are zone-free) except a manually-set clock with the
+  wrong zone, max offset ~26 h (UTC−12 vs UTC+14) — practically nil.
+- Dead RTC / GPS rollover / bad NTP push clocks into the PAST (no lower bound → harmless).
+- Real cause: a person setting the date forward by hand (game timers, trial extension, testing).
+  Those jumps are days-to-years, so the distribution is heavy-tailed: widening 1 d → 7 d buys little.
+- Odds: my estimate, not measured — ~1 in 1,000 to 1 in 10,000 devices at any moment, mostly
+  deliberate. Confident in "rare and deliberate", not in the digit.
+- Heals itself: `stuck` is in-memory, so the next app open retries; it passes once real time is
+  within a day of the stamp, or on any edit after the clock is fixed. Exposure while parked: that
+  Note is on one device only.
+
+Recommendation: keep the bound. One cheap change: the permanent-failure message should name the
+device date/time as a likely cause (gateway can't tell this denial from others).
+
+### Dead ends — do not re-walk
+- "Late push after days offline could trip it": backwards — lateness makes the stamp look older.
+- Client-side clamp against server time: no server clock available without a round-trip; not worth it.
+
 ## 2026-09-17 — NoteMaker, step 4: engine sequencing rulings (Q1–Q4)
 
 Reasoned, not model-checked — no spike this time. Rulings given to Builder:

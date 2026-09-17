@@ -2,6 +2,38 @@
 
 Newest entry first. Append only.
 
+## 2026-09-17 (Day 6, later) — ticket 03's amendment recovered from an unmerged branch; one-day bound confirmed
+**Worked:** builder, mathematician (Overseer investigated the miss)
+
+**Moved:**
+- **Correction to the Day 6 entry below.** Its "Ticket 03 line 118 ... still waiting on Badrish" is
+  wrong. I amended the ticket on Day 5 in `3b442b6`, with the logbook in `269d3a5`. Both commits
+  existed only on `claude/notemaker-builder-step-4-7c1d55`, which was never merged into `main`,
+  and this worktree was branched from `main`. Both are now cherry-picked here as `c8d10b0` and
+  `41324f1`. The Day 5 (later) entry sits below the Day 6 one, newest first.
+  `features/sync-engine.md`'s open question is corrected in place.
+- **The one-day future bound on `updatedAt` is confirmed by Badrish.** He asked the Mathematician
+  (using the `deduce` skill) how likely it is and why it could happen. His answer: only a clock
+  that was wrong at edit time can trip it, and nothing in our mechanism makes one. Clocks that
+  fail almost always fall behind, so a clock that runs ahead has nearly always been set forward
+  by hand. He puts it very roughly at 1 in 1,000 to 1 in 10,000 devices, a figure he says is not
+  measured. It clears on a later session once the real date catches up. Keep the one-day limit.
+  His two recommendations are in `features/sync-engine.md`.
+- **New session-start check (Overseer's recommendation):** `git branch --no-merged main`,
+  reported every session. Today it shows `claude/notemaker-builder-step-4-7c1d55`.
+
+**Open:**
+- **Unpushed:** as `git rev-parse` gives it in Builder's block to Badrish after this commit.
+- `claude/notemaker-builder-step-4-7c1d55` will keep showing as unmerged until it is merged or
+  deleted. Its two commits are now on this branch under new hashes.
+- The Mathematician's two recommendations go to the editor/UI steps.
+
+**Badrish:** "Builder - I think one-day future date limit is fine. Would be a weird situation to
+have one day. Please call Mathematician, I want to know what are the odds of such a situation
+happening where we require 1 > day and why a situation like that could even happen. Use skill
+/deduce. I had also included in NoteMaker Day 5 to amend ticket 03 line 118. If not done, please do
+it now. Let me know why it was missed from last chat."
+
 ## 2026-09-17 (Day 6) — step 5: firestore.rules and firestoreGateway against the emulator
 **Worked:** builder, operations
 
@@ -40,6 +72,7 @@ Newest entry first. Append only.
 
 **Badrish:** "Builder, this is NoteMaker Day 6. Build step 5." Push rule unchanged. Deploying
 rules is a separate act.
+
 ## 2026-09-17 (Day 5, later) — step 4 pushed; ticket 03 amended; Day 6 (step 5) prompt written
 **Worked:** builder
 

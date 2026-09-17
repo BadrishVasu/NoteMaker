@@ -1,5 +1,22 @@
 # Builder's notebook — NoteMaker
 
+## 2026-09-17 (Day 6, later) — I reported finished work of my own as open
+
+**At the start of every session, run `git branch --no-merged main` and report what it shows,
+before anything else** (Overseer's recommendation). A worktree cut from `main` can't see commits
+that live only on another branch, and neither can the logbook in it.
+
+How it looked from my side: the Day 6 brief said the ticket 03 line "was amended on Day 5", but
+the ticket and the journal in front of me (both from `main`) still showed it as open. I went with
+the files and wrote "still waiting". I didn't ask why the brief and the logbook disagreed, and
+that disagreement was the signal. When they contradict each other, one of them is on another
+branch. The full finding is the Overseer's.
+
+Same session, the same slip three times: I resolved the cherry-pick conflict with sed on the
+marker lines, which also dropped the blank separator lines. Then two patch scripts in a row broke
+on Windows temp paths and backslashes. I had written "edit directly" in my notebook that same day.
+Journal and notebook edits go through the Edit tool, never through generated scripts.
+
 ## 2026-09-17 (Day 6) — step 5: green against a real backend still proved less than it looked
 
 The whole emulator suite was green on its first run, and the transaction retry test passed
@@ -25,9 +42,9 @@ Dead ends:
   discriminates when the second listener opens offline.
 - Printing mutant results on Windows Python: cp1252 crashes on vitest's box characters. Set
   `PYTHONIOENCODING=utf-8`. The script's `finally` restored both files, and sha1 confirmed it.
-- A Python patch written inside a bash heredoc turned `
-` into real newlines inside a string
+- A Python patch written inside a bash heredoc turned `\n` into real newlines inside a string
   literal. Same class as Day 5's slip. Edit the script file directly instead.
+
 ## 2026-09-17 (Day 5, later) — push by SHA; don't park on a background agent
 
 - I pushed the approved range as `git push origin 302c980:main`, not `HEAD`. His word covered a

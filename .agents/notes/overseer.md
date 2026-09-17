@@ -1,5 +1,51 @@
 # Overseer's notebook — NoteMaker
 
+## 2026-09-17 — Ticket 03 line 118: "missed" on Day 5? No. Done, then stranded on a branch
+
+**Verdict: blocked on the record, not on the work.** The amendment was made on Day 5. It never
+reached `main`, so Day 6 started without it.
+
+### What I checked myself
+- `git log --all`: `3b442b6` (ticket 03 amended, 18:19:01) and `269d3a5` (the "Day 5, later"
+  journal entry, which also records the push and the step 5 prompt, 18:19:29) exist only on
+  `claude/notemaker-builder-step-4-7c1d55`. `git branch --contains` names only that branch.
+  `origin/main` = `main` = `302c980`. The step 4 worktree is still there at `269d3a5`.
+- `269d3a5` quotes Badrish: "push ec664aa..302c980 and amend ticket 03 line 118". So the instruction
+  reached the Builder, and he carried out both parts. The amendment's wording is correct: server-backed,
+  `fromCache === false`, from `snapshot.docs`, a UI fact only.
+- Reflog: the Day 6 worktree was created at 18:22:01 from `302c980`, three minutes after `3b442b6`.
+  Its journal, feature file and ticket are all from before the amendment.
+- The Day 6 prompt's line "amended on Day 5" was **true**. The Builder wrote it
+  (269d3a5: "Step 5 prompt handed to Badrish"). It was not an unchecked assertion.
+
+### Where it failed
+1. **Session hand-off (root cause).** Day 5's later commits stayed on a worktree branch that was
+   never merged locally. That was correct for the push, which needs Badrish's word, but nothing
+   carries unpushed local work into the next session's base. The new worktree branched from
+   `main`. Owner: Claude, who creates the session worktrees. Builder shares it, because his
+   "Unpushed" line in `269d3a5` named the commits but not the branch they lived on.
+2. **The Day 6 Builder didn't reconcile a contradiction.** His brief said "amended". His journal
+   said "open". He repeated the journal in his report (JOURNAL Day 6 Open, `features/sync-engine.md:201`)
+   and didn't flag that the two disagreed. One `git log --all` would have found `3b442b6`. His push-range
+   check at the start also compared only `origin/main` with `HEAD`, which cannot see a sibling branch.
+3. **Claude.** Claude relayed both statements without flagging them. Then, while briefing me, Claude
+   said "it has not been amended" after checking only this worktree. That is the same single-branch
+   blind spot as in 2.
+
+### What stops a repeat (proposed, owners decide)
+- Session start: run `git branch --no-merged main` and `git log --all --oneline main..`. Anything
+  listed is reported before work begins. This goes next to the push-range check. Owner: Builder.
+- A new session's worktree is based on the previous session's tip when that tip is unpushed, or
+  that branch is merged into local `main` first. Owner: Claude.
+- A brief that contradicts the logbook is raised first, not reported as two separate facts. Owner: Builder.
+
+### Actions for others
+- Builder: **cherry-pick `3b442b6`** rather than writing a second wording. Otherwise there are two
+  divergent amendments to reconcile later. Carry `269d3a5`'s lost journal entry and builder-notebook entry
+  forward. The journal is append-only, so correct the Day 6 "still waiting" line in a new entry.
+  Update `features/sync-engine.md:201` in place. Then the stale branch and worktree can be retired.
+- Not verified: the text of Claude's Day 6 relay. I only have Claude's account of it.
+
 ## 2026-09-17 — Day 4 check, step 3 (`c63921a`, `916507a`, `0cec6ac`)
 
 **Verdict: on track.** Brief honoured point by point. The `commitPush` move is justified. All three

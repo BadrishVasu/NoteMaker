@@ -198,13 +198,18 @@ one.
 
 ## Open questions
 - ~~Step 4 owes: adopt view; `ConflictCopyIdTooLongError`~~ — closed at step 4, see Decisions.
-- **Ticket 03 line 118** ("set once, when the first snapshot for this uid has been applied") should
-  say a *server-backed* (`fromCache === false`) snapshot — waiting on Badrish; it is his record.
+- ~~Ticket 03 line 118 should say a server-backed snapshot~~ — **closed.** It was amended on
+  Badrish's word on Day 5 (`3b442b6`), but that commit sat on an unmerged branch. It was
+  cherry-picked here on Day 6 as `c8d10b0`. This line wrongly listed it as open until the
+  correction on 2026-09-17 (Day 6, later).
 - ~~Step 5 owes: includeMetadataChanges, error mapping, assertWireDoc~~ — closed at step 5.
 - **Rules not deployed.** Deploying to the live project is a separate act and needs Badrish's word.
-- **The "absurdly future-dated" bound is one day ahead of server time.** 01 names no number, so I
-  chose this one. A device whose clock is more than a day fast gets a permanent push failure,
-  which the engine surfaces. It is waiting on Badrish to confirm or change it.
+- **The "absurdly future-dated" bound is one day ahead of server time — confirmed by Badrish,
+  2026-09-17 (Day 6).** A device whose clock is more than a day fast gets a permanent push failure,
+  which the engine surfaces. The Mathematician's odds and reasoning are in `notes/mathematician.md`.
+  He recommends two things for later steps: the "couldn't sync" message should suggest checking
+  the device's date and time, and the editor should get a test that it stamps epoch
+  milliseconds.
 - Not exercised on the emulator: a transaction that commits and then rejects on the client
   (a lost response). It cannot be produced deterministically there. The engine's `landed` branch
   covers it against the fake.
