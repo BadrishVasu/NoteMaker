@@ -116,6 +116,15 @@ Chrome's own Add to Home screen acting on the manifest already served by the liv
       ticket 03's `navigator.storage.persist()` (a plain tab is often denied where an installed app
       is granted) and ticket 12's back gesture — so this is worth doing before those. The icon will
       be placeholder art until UI/UX's step 6; that is expected, not a bug.
+- [x] **Rules actually released to the live project** — builder, 2026-09-17. Badrish signed the
+      Firebase CLI in (`npx firebase login:list` → `badrishv2002@gmail.com`), and the deploy ran
+      immediately after, gated on green tests (715 unit in 14 files, 72 emulator in 4 files):
+      `npx firebase deploy --only firestore:rules --project notemaker-claude --non-interactive`.
+      The CLI compiled `firestore.rules` without errors and reported `released rules firestore.rules
+      to cloud.firestore` on `notemaker-claude`. `--project` was passed explicitly because there is
+      still no `.firebaserc`; `--only firestore:rules` kept the deploy to rules alone — no hosting,
+      no functions, no indexes. This closes the follow-up that has been open since Day 6, when the
+      same deploy was blocked solely on there being no authorised account on this machine.
 - [ ] **The `prompt` update bar has not been exercised**, and could not be by this deploy. A waiting
       service worker only exists once a *second* build is deployed, so the update-available bar first
       becomes testable on the next deploy. Flagged so it is checked then rather than assumed.

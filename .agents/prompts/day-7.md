@@ -86,19 +86,22 @@ corpus. Watch these, which are already decided and easy to quietly violate:
 
 ## 3. Open follow-ups, carried in
 
-- **Firestore rules deploy to the live project is still not done.** Badrish gave the word on Day 6,
-  but the Firebase CLI has no signed-in account on this machine and signing in is his to do, not
-  an agent's. Once he has run `firebase login`, deploy naming the project explicitly —
-  `firebase deploy --only firestore:rules --project <the project id in ticket 04>` — there is no
-  `.firebaserc`, so a bare `npm run rules:deploy` would target whatever project the CLI has active.
-  Run `npm test` and `npm run test:emulator` first and confirm the released project and ruleset from
-  the CLI's own output afterwards.
-  **Before that deploy: run `npm ci` in the main checkout.** `firebase-tools` is a devDependency and
-  the main checkout's `node_modules` predates it — there is no `firebase` binary there, and there is
-  no global install either (`firebase` is not on PATH; invoke it via the npm script or
-  `npx firebase`). Day 7 runs without worktrees, so this gap is directly in the way. `firebase login`
-  credentials are global (`%APPDATA%\configstore\firebase-tools.json`), so Badrish signing in once
-  from any directory covers every checkout.
+- **Firestore rules deploy: DONE, 2026-09-17, end of Day 6.** Badrish ran `npx firebase login`
+  (`login:list` → `badrishv2002@gmail.com`), and the deploy went out the same session:
+  `npx firebase deploy --only firestore:rules --project notemaker-claude --non-interactive`,
+  gated on green tests (715 unit in 14 files, 72 emulator in 4 files). The CLI reported
+  `released rules firestore.rules to cloud.firestore` on project `notemaker-claude`. Nothing is
+  left for Day 7 here. Keep the two standing facts for the *next* rules change: there is still no
+  `.firebaserc`, so every deploy must pass `--project notemaker-claude` explicitly — a bare
+  `npm run rules:deploy` targets whatever project the CLI has active — and the deploy stays gated
+  on `npm test` + `npm run test:emulator` passing first.
+- **`npm ci` in the main checkout, before anything that needs a binary from `node_modules`.**
+  The main checkout's `node_modules` predates the `firebase-tools` devDependency, so it has no
+  `firebase` binary (and there is no global install — `firebase` is not on PATH; invoke it via the
+  npm script or `npx firebase`). Day 7 runs without worktrees, so this gap is directly in the way of
+  the emulator tests and any future rules deploy. `firebase login` credentials are global
+  (`%APPDATA%\configstore\firebase-tools.json`), so Badrish's sign-in already covers every checkout
+  — no second login is needed.
 - **Read cost must be measured at step 7, not inherited.** Ticket 03 priced the per-open full
   re-read against desktop-shaped opens; the design assumes Android reaps the app constantly, so
   20–50 opens/day. `persistentLocalCache` is the sanctioned one-line reversal if the number is bad.

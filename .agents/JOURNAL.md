@@ -2,6 +2,35 @@
 
 Newest entry first. Append only.
 
+## 2026-09-17 (Day 6, epilogue 2) — Firestore rules deployed to the live project
+**Worked:** builder
+
+**Moved:**
+- **The rules deploy is done.** Badrish ran `npx firebase login`; `login:list` confirmed
+  `badrishv2002@gmail.com` before anything was deployed. Re-ran the gate first — 715 unit tests in
+  14 files, 72 emulator tests in 4 files, all passing — then
+  `npx firebase deploy --only firestore:rules --project notemaker-claude --non-interactive`.
+  The CLI compiled `firestore.rules` clean and reported `released rules firestore.rules to
+  cloud.firestore` on `notemaker-claude`. `--project` explicit because there is still no
+  `.firebaserc`; `--only firestore:rules` so nothing but rules went out. No prompt, no permissions
+  error, no credential handled. This closes the follow-up open since Day 6.
+- **`.agents/prompts/day-7.md` updated** for what is now true: the deploy item becomes a record
+  rather than a task, and `npm ci` in the main checkout is promoted to its own standing item —
+  it was only ever written as a precondition of the deploy, but it is really a precondition of the
+  emulator tests and anything else needing a binary from `node_modules`. Everything else in the
+  prompt stands: worktree/branch/leftover-folder cleanup, the no-worktrees rule, the session-start
+  branch checks, the one-off `.live.*` check, and step 6.
+- `.agents/features/deploy-pipeline.md` carries the release as its own checked box.
+
+**Open:**
+- **Unpushed:** this entry's commit. Operations pushes on Badrish's word, by SHA.
+- Day 6 worktree/branch/leftover-folder cleanup — unchanged, step 0 of the Day 7 prompt.
+- The `prompt` update bar still unexercised: a rules deploy changes nothing the service worker
+  precaches, so it needs the next *app* deploy.
+
+**Badrish:** "I have successfully run `npx firebase login`. If you need to make any changes to Day 7
+prompt, do so now."
+
 ## 2026-09-17 (Day 6, epilogue) — Firebase CLI environment checked ahead of the Day 7 deploy
 **Worked:** builder, operations
 

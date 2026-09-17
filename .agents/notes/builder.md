@@ -791,3 +791,14 @@ ruled out) — both are with it, neither needs sending twice.
 - `firebase login` creds are global (`%APPDATA%\configstore\firebase-tools.json`), not
   per-checkout — logging in once from any directory covers all of them.
 - No `.firebaserc` in the repo, so every deploy must pass `--project` explicitly.
+
+## 2026-09-17 — rules deploy, done
+- Deployed: `npx firebase deploy --only firestore:rules --project notemaker-claude
+  --non-interactive` after `login:list` confirmed the account and both suites were green
+  (715 / 72). CLI: `released rules firestore.rules to cloud.firestore`.
+- `--non-interactive` was deliberate: on a deploy I expect to be prompt-free, a prompt is a
+  signal to stop, not something to answer. It didn't fire.
+- Deploy left the worktree clean — no `firebase-debug.log` or similar to gitignore. Worth knowing
+  for next time: only the *emulator* run drops debug logs, and those are already ignored.
+- The `npm ci` gap in the main checkout was filed under "before the deploy", which was too narrow.
+  It gates the emulator tests too. Rewritten in the Day 7 prompt as a standing item.
