@@ -2,6 +2,65 @@
 
 Newest entry first. Append only.
 
+## 2026-09-18 (Day 7) — step 6 built: shell, list and editor, offline-only
+**Worked:** builder, ui-ux, frontend
+
+**Moved:**
+- **Step 6 is built** in the main checkout on `main`, no worktree. The app is usable offline-only
+  against a seeded local store (`npm run dev`, open `/?seed`). Builder: `sync/corpus.ts`
+  (a copy-on-write `Map` of stable rows plus a version counter under `useSyncExternalStore`, no
+  store library, carrying the redirect event), `domain/projection.ts`, `domain/size.ts`.
+  18/18 mutants killed. UI/UX: `.scratch/notes-mvp/design/05-screens.md`. Frontend: `src/app/**`,
+  `platform/lifecycle.ts`, `platform/prefs.ts`. **860 unit tests in 32 files, 72 emulator tests
+  in 4 files**, lint, typecheck and build all green. Also checked in a real browser at 1280px and
+  375px. Feature file: `Status: built`, **not `verified`** — QA has not run.
+- **Builder's review of Frontend's tree fixed four things, test first (7/7 mutants killed):**
+  (1) a **title-latch data-loss bug**: typing the title then the body inside 600 ms, or inside a
+  `store.put`, lost the typed title and reversed the latch. `schedule(id, change)` now merges at
+  the queue. (2) The UI and the dev seed both **wrote `initialSyncCompletedAt`**, which is the
+  engine's alone. (3) The **conflict-redirect wiring** now has an end-to-end test: same textarea,
+  same selection, `replaceState` only. (4) The **desktop layout was broken** — a step-0
+  `index.css` rule clamped the app and the SyncStrip rendered as a third column. jsdom can't see
+  layout; only the browser caught it.
+- **Two overrides of UI/UX's spec**, both folded in by UI/UX. First, **SyncStrip clauses are
+  independent, not ranked**: the reassurance clause drops on persist-denied, and `Sync now`
+  appears when Auto sync is off — four states. UI/UX's ranking suppressed `Sync now` for the
+  persist-denied user, who is exactly the one who most needs to get their words off the device.
+  Second, the **too-large check counts UTF-8 bytes, not code units**, which under-count an emoji
+  or a CJK note by 2–3x.
+- Placement calls, UI/UX's own: `Sync Now` in the list header; `Auto sync` as a toggle in the list
+  header's overflow menu. Builder's calls: `Auto sync` lives in `localStorage`, not store `meta`;
+  Preview is a closed hand-rolled markdown subset with no `dangerouslySetInnerHTML`.
+- `sync.lineage` random walks now carry an explicit 60 s budget. They started timing out at 5 s
+  once step 6's jsdom files shared the run. Reproducible, and they pass in isolation.
+- **`.live.*` lock check.** On the normal path it works: UI/UX's marker was created and removed.
+  I nearly reported a leak that was **my own marker** (I'm a subagent too); the id in the filename
+  settled it. On the abnormal path it leaks: **both Frontend runs died on an API rate limit
+  (HTTP 429) without reaching SubagentStop, and `c7007023e3c6.live.a4873fc2646d5815d` and
+  `.live.af86c2e78974e41a8` are still in `~/.claude/.agent-locks/`.** Nothing deletes a marker
+  from a crashed run. Reported, not touched — the hook belongs to the Overseer and the Mathematician.
+
+**Open:**
+- **Unpushed:** `0532e87..HEAD` on `main` — exact SHAs are in the report to Badrish. Each push
+  needs his word.
+- **QA** has not verified step 6.
+- **Step 7 carries four items found here** — listed on `features/editor-and-shell.md`. The one
+  that needs the Mathematician: a pending save across a conflict redirect flushes to the old id.
+- **The Designer should be told** that `Auto sync` lives in `localStorage` (`platform/prefs.ts`)
+  and that `AppShell` now takes an optional `corpus` prop as step 7's engine seam.
+- **Frontend's notebook entry is missing.** Both runs ended on the rate limit before writing it.
+  Its reasoning survives only in code comments.
+- **Housekeeping, not urgent:** `.claude/worktrees/notemaker-day6-step5-d35669` is still an empty
+  directory held by another process — `git worktree remove`, `rmdir` and `Remove-Item` all failed.
+  Unregistered and harmless. Also in `~/.claude/.agent-locks/`: a dead
+  `2d6ec08b9037.{agents,since}` pair pointing at that deleted worktree root, plus the two leaked
+  Frontend markers above.
+- Still ahead: step 7 (auth, `persist()`, the four first-load states live, two-device end-to-end,
+  and the read-cost measurement), then tickets 06, 12, 11.
+
+**Badrish:** No word this session on the SyncStrip override; standing as built. "Try again" after
+the rate limit.
+
 ## 2026-09-17 (Day 6, epilogue 2) — Firestore rules deployed to the live project
 **Worked:** builder
 

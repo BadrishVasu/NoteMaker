@@ -1,5 +1,168 @@
 # Builder's notebook — NoteMaker
 
+## 2026-09-18 (Day 7, later) — I parked on an agent again, then misread the tree
+
+**The slip, fourth time.** I launched Frontend in the background, wrote "I'll report when it
+lands" and ended the turn. My own notebook has this rule twice (09-16 and Day 5). What I told
+myself this time was that the harness *would* wake me — and it would have, but the turn ended with
+step 6 not done, which is the thing the rule is actually protecting. The version that survives:
+**if the session's deliverable depends on an agent, that agent runs in the foreground.** Whether
+a notification exists is irrelevant. I relaunched in the foreground and it still didn't finish —
+both runs hit an API rate limit (HTTP 429) — but that is a different failure from choosing to
+stop.
+
+**"Frontend wrote nothing" was false when I said it.** I checked `src/app/` a few minutes into the
+first run, saw only `SignInSmokeTest.tsx`, and wrote the absence down as a result. The agent was
+still reading. By the time the second run was cut off, the tree held ~40 files, most from the
+first run. The coordinator caught it. It is the 09-06 lesson ("nothing in the logbook may assert a
+file exists without checking the tree") in its mirror form: **an absence observed mid-run is a
+timestamp, not a finding.** Same shape as the lock marker below — a snapshot of a live process
+read as a verdict about a finished one.
+
+**Two concurrent Frontends.** The first (background) run was never dead; my relaunch put a second
+one on the same files. Both died at the limit, so I couldn't ask either what was theirs. I
+reviewed the tree on its merits instead of trying to attribute it. The rule for next time: never
+relaunch an agent into a tree another run of it may still be writing — confirm it's stopped first.
+
+### What the review found — green was not "done" three times over
+
+852 tests, lint, typecheck and build were green on arrival. Behind that:
+
+- **A data-loss bug in the title latch — the feature Badrish ruled on personally.**
+  `saveQueue.schedule` replaced the pending patch, and each handler built a full patch from the
+  corpus row, which lags the debounce. Title then body inside 600 ms: the typed title vanished
+  and `titleIsCustom` went back to false, while the uncontrolled input kept showing the user's
+  title. Frontend had seen exactly this lag and guarded Delete/Restore against it with
+  `peekPending`. It fixed two call sites and left the other two, because the fix sat in callers
+  instead of at the choke point. The existing latch test typed body-then-title, which is the one
+  order the bug can't show in. There was a second window too: inside a `store.put` after a
+  blur-flush. **`schedule(id, change)` now takes only the changed fields and merges at the
+  queue.** A caller that can only say what it changed cannot revert what it didn't. This is the
+  same move as the `extends` guard and the import boundary: guard the choke point, not the
+  well-behaved caller.
+- **`initialSyncCompletedAt` written by the UI, in two places** (`AppShell` and `devSeed`),
+  claiming a server sync that never happened. Frontend flagged the `AppShell` one honestly in a
+  comment; the `devSeed` one only showed up when I read the seed guard before opening a browser.
+  The engine is now the only production writer, and I checked that with grep.
+- **The layout was broken at desktop width, and no test could see it.** The detail pane was 0px
+  wide, the app sat in a centred 40rem column, and the SyncStrip was a third column. The step-0
+  `index.css` had a `.shell` rule that collided with the new class. jsdom does no layout, so a
+  suite of 852 tests was silent about an app you couldn't use. **For a UI slice, the browser is a
+  gate, not a courtesy.**
+
+Mutants on the fixes: 7/7 killed. Among them are the original replace-bug, the in-flight window,
+a redirect that remounts the Editor, and a redirect that pushes instead of replacing. The last two
+needed a new end-to-end redirect test through `AppShell`. The Editor unit test proved the
+component *could* preserve its state; nothing proved the shell didn't throw it away.
+
+### The lock finding, completed
+
+My entry below says the mechanism works, and on the normal path it does. The Day 6 fix's own
+tests couldn't prove the abnormal path, and today proved it: **both Frontend runs died on the 429
+without reaching SubagentStop, and their `.live.*` markers are still there.** The hook's own
+comment says a leaked marker only delays the `.since` deletion. But nothing ever deletes the
+marker itself, so under abnormal termination they accumulate. I reported this and did not delete
+them; the hook belongs to the Overseer and the Mathematician.
+
+Dead ends:
+- The mutation harness written through a heredoc: `\\n` turned into a real newline inside a Python
+  string, again. Third time. I fixed it with the Edit tool on the generated file. The harness
+  itself should live as a file I edit, never as a heredoc I generate.
+- Screenshots and clicks in the Browser pane fail while Claude's window is hidden. Driving React
+  through the native value setter plus `input` events and `.click()` exercised the real handlers
+  and took one round trip per scenario. That's worth doing first next time, not after a timeout.
+
+## 2026-09-18 (Day 7) — step 6, and a leak I nearly reported that wasn't one
+
+### The lock check: I almost filed a false positive, and the control that caught it
+
+The one-off task was to list `~/.claude/.agent-locks/` after the first sub-agent finished and say
+whether a `.live.*` marker leaked. I looked, found exactly one `.live.*` file sitting there two
+minutes after UI/UX had completed, and had the finding half-written before I checked the one thing
+that mattered: **the id in the filename.** It was `a01be69062c776a33`. UI/UX's agent id was
+`a1624c4bf31dc59e6`. Not the same agent.
+
+Then Frontend started and dropped a marker whose id matched the agent id the tool had just handed
+me, exactly. So the hook uses the real agent id, and the marker I was looking at belongs to a third
+agent that started at 00:40 and was still running — **me.** I am a subagent too, and my own
+SubagentStart fires like anyone's. UI/UX's marker had been created and correctly removed; that is
+why it was already absent when I looked.
+
+The mechanism works. What I want to keep is the shape of the near-miss, because it is the mirror of
+the one I already have written down twice ("a check that matches nothing looks like a clean repo"):
+**a marker file present is not a marker file leaked.** The observable was a leak and a correctly
+running agent presenting identically, and the only thing that separates them is an identifier I
+already had in hand. The rule: before reporting a leaked artifact, match its identity against
+something I know independently. A count of files is not evidence about *which* files.
+
+Second-order: the lock dir also holds `2d6ec08b9037.{agents,since}` pointing at the Day 6 worktree
+path, which no longer exists. Dead, unreachable, nothing will ever run at that root again to
+trigger the gate on that key. Not worth touching; noting it so the next person who reads that
+directory doesn't chase it either.
+
+### Step 6, the part I built myself
+
+`domain/projection.ts`, `domain/size.ts`, `sync/corpus.ts` — 45 tests, TDD, green on the first run,
+which on this project is a warning rather than a result. So: 18 mutants across the three files,
+**18 killed**, files sha1-verified restored. The ones I would not have predicted passing without
+having written them:
+
+- **`getRows()` rebuilding the map on every read.** It looks harmless and it destroys the
+  `useSyncExternalStore` contract — React compares snapshots by identity and would see a change on
+  every render, which is an infinite re-render loop, not a slow list. Killed by one assertion that
+  `corpus.getRows() === corpus.getRows()`, which reads like a tautology until you know why it is
+  there.
+- **Notifying before publishing the new snapshot.** A listener that reads the corpus during
+  notification sees the *old* map. That is exactly one frame of stale render, and it is the frame
+  the conflict redirect happens in — which 05 forbids down to the character.
+
+Two decisions I took alone and would take again:
+
+- **The `id` tiebreak in `listView`/`trashView`.** `updatedAt` is millisecond-resolution, so a
+  seeded corpus or two edits in one millisecond tie, and `Array.sort` with a comparator that
+  returns 0 gives no guarantee across engines. Without a total order the list can reorder itself
+  between two renders of identical data — 05's "must not re-sort the open Note out from under the
+  user" arriving by accident rather than by a bug anyone wrote.
+- **`outboxCount` counts Tombstoned rows.** An unpushed delete is a write waiting to sync exactly
+  like an unpushed edit, and the strip that reads this count promises the user their *changes* are
+  safe on this device. Excluding them makes the strip lie by omission in the one case where the
+  user has thrown something away and it hasn't left.
+
+`searchMatches` is a real substring match over title and body, not a placeholder. 06 owns matching,
+ranking and scope — but the *scope* is already claimed out loud by the no-results copy ("Search
+looks at titles and note text"), so shipping less than that would have made the empty state false.
+06 replaces the body of that function; its signature and its callers are what 05 settled.
+
+### Where I overrode the spec, and why each
+
+UI/UX's `05-screens.md` is good and I took both of its placement decisions unchanged. Two things I
+sent back:
+
+- **The too-large-to-sync check as "UTF-16 code units, exact byte-counting is not this spec's
+  job".** It is somebody's job, and the whole reason the threshold is visible at all is that the
+  alternative is a silent permanently-stuck Outbox. Code units under-count an emoji or a CJK note
+  by 2-3x, so the Note that most needs the strip is the one that wouldn't show it. `domain/size.ts`
+  counts real UTF-8 bytes.
+- **The SyncStrip overlap.** UI/UX flagged honestly that 05 names three states without ordering
+  their overlap, and resolved it by ranking them, with persist-denied winning and suppressing the
+  `Sync now` tap target. I made them independent clauses instead: the *reassurance* clause drops on
+  persist-denied (that is the clause 05 says drops, and it is a promise we can't keep while
+  eviction is possible), the *action* clause appears when Auto sync is off. Four states, not three.
+  The reasoning that decided it: `Sync now` is an action, not a reassurance, so 05's sentence never
+  reached it — and the user with persist denied is exactly the user who most needs their words off
+  this device. Ranking them leaves the one person facing real eviction risk looking at a strip that
+  states a problem and offers nothing.
+
+Raising it was the right call by UI/UX and I want that on the record, because the alternative — a
+spec that silently picks one and reads as settled — is the failure mode that has cost this project
+three separate bugs now.
+
+- **`Auto sync` lives in `localStorage` via `platform/prefs.ts`, not in the store's `meta`.** It is
+  a per-device UI preference; `MetaShape` is ticket 03's three keys and is covered by the store
+  contract suite, so putting it there is a schema change I'd owe the Designer. This way it is
+  nobody's contract. Small and reversible if that turns out wrong. **The Designer should know it
+  exists** — flagged in the journal.
+
 ## 2026-09-17 (Day 6, end) — a green go-ahead I still couldn't execute
 
 Badrish said deploy the rules, and I couldn't: no authorised Firebase account on this machine.
