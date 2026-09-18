@@ -100,3 +100,55 @@ Also held off the map's fog: list ordering, pinning, first-run onboarding, Andro
 I designed only the states the shell physically cannot render without (cold start, empty list,
 sign-in failure offline) and said so out loud on the ticket. The back-button one is now sharp
 enough to ticket and I flagged it up.
+
+## 2026-09-18 — step 6, ticket 05 → `.scratch/notes-mvp/design/05-screens.md`
+
+Turned the resolved ticket into a component-by-component spec Frontend builds from directly:
+`AppShell, NoteList, SearchField, Editor, TitleField, EmptyStates, SyncStrip, TrashView`, the
+conflict banner, and a minimal `SignIn`. Read `src/domain/note.ts` and `title.ts` first so props
+are named against real types, not invented fields.
+
+**The two placements handed to me:**
+- `Sync Now` → list header (icon button next to the overflow menu), on both desktop pane and
+  phone home screen. It drains the whole Outbox, not the open Note, so it belongs on the one
+  chrome that's present on every screen — not the editor toolbar, which disappears the instant
+  nothing is open and would misread as "sync this Note."
+- `Auto sync` → a toggle row in the list header's overflow menu, next to Trash and Sign out —
+  the one place in this app that already behaves like a settings menu. No dedicated settings
+  screen for one boolean.
+
+**A real gap I found, not just handed context: `resolveTitle` runs at save time, so
+`LocalNote.title` is already the resolved string on a clean row.** Nothing in ticket 05 or the
+prototype says this explicitly — the prototype recomputes `derivedFrom(body)` live in the DOM
+layer, which is fine for a throwaway but would be wrong production advice (double-deriving,
+disagreeing with the stored value if a save is in flight). Spec says `TitleField`'s placeholder is
+literally `note.title` when `!titleIsCustom`, not a recomputation. Recorded so Frontend doesn't
+copy the prototype's shortcut.
+
+**Underspecified in ticket 05, flagged in the spec itself:** the three `SyncStrip` states are
+each given ("one sentence each") but never ordered against each other — what shows when
+`persistDenied` and `autoSync === false` are both true at once with a non-empty Outbox. I picked
+persist-denied as the higher-priority state (bare "N notes waiting to sync.", no "Sync now"
+clause) because appending an action there would wrongly imply tapping it removes the eviction
+risk, which it doesn't. This is a judgment call, not a restatement of something settled — flagging
+it up in case Badrish or Builder reads it differently.
+
+**Also newly precise, not a decision:** the "Custom but emptied" title hint needs a live-computed
+`untitledPreviewN` (via `nextUntitledN` over current mirror titles) so the copy never lies about
+which `Untitled Note N` the field will actually resolve to on save. The ticket's example copy
+just says "4"; I made the number a real prop rather than a hardcoded string.
+
+No dead ends this session — the ticket was thorough enough that turning it into a spec was
+mostly transcription plus naming real props, not re-deciding anything.
+
+**Addendum, same day — Builder's two rulings folded in.** He overturned my SyncStrip priority
+order: the reassurance and action clauses are independent, not ranked, so it's four explicit
+states, not three with a tiebreak. His reasoning is better than mine — `Sync now` is an action,
+not a reassurance, so dropping the reassurance under `persistDenied` doesn't reach it, and the
+user most at eviction risk is the one who least benefits from a strip that states a problem and
+offers nothing. Rewrote §7 with all four cells spelled out. Also pointed §4's too-large check at
+his new `src/domain/size.ts` `exceedsSyncLimit` (real UTF-8 bytes, not my UTF-16-proxy shortcut —
+he's right that it under-counts emoji/CJK exactly where the threshold matters most), and scoped
+`Preview`'s markdown subset to his hand-rolled, no-dependency, `dangerouslySetInnerHTML`-free
+list. Nothing of mine survived unchanged in §7; worth remembering that "flag it and let someone
+with more context rule" beat guessing at a priority order myself.
