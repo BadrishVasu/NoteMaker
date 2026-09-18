@@ -12,15 +12,9 @@ body {
   margin: 0;
 }
 
-.shell {
-  max-width: 40rem;
-  margin: 0 auto;
-  padding: 2rem 1.25rem;
-}
-
-.muted {
-  opacity: 0.65;
-}
+/* Global base only. Layout lives in app.css. The step-0 smoke page's `.shell`, `.muted`, `dd`
+ * and `[role=alert]` rules were removed at step 6: `.shell` collided with AppShell's class and
+ * clamped the whole app to a centred 40rem column, and the rest had no remaining users. */
 
 button {
   font: inherit;
@@ -30,14 +24,4 @@ button {
   background: transparent;
   color: inherit;
   cursor: pointer;
-}
-
-dd {
-  margin: 0 0 1rem;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  overflow-wrap: anywhere;
-}
-
-[role='alert'] {
-  margin-top: 1rem;
 }
