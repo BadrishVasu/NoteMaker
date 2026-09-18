@@ -149,12 +149,19 @@ describe('random walks — per-step properties and convergence against the real 
     return trace
   }
 
+  // An explicit budget, not vitest's 5 s default. Each case is 400 CPU-bound walks and its wall
+  // time depends on what else the worker pool is running: it fit inside 5 s while the suite was
+  // pure logic, and stopped fitting at step 6 when ~15 jsdom React files joined the same run
+  // (reproducible `Test timed out in 5000ms`; passes in isolation). The walk count is the thing
+  // being bought, so the timeout moves, not the count. (builder, 2026-09-18)
+  const WALK_BUDGET_MS = 60_000
+
   for (const delivery of ['current', 'queued'] as const) {
     for (const start of ['landed', 'create'] as const) {
       for (const purge of [false, true]) {
         it(`${delivery} delivery, ${start}, purge ${purge ? 'on' : 'off'}: 400 walks × 30 steps`, () => {
           for (let seed = 1; seed <= 400; seed++) walk(seed, start, purge, delivery, 30)
-        })
+        }, WALK_BUDGET_MS)
       }
     }
   }
