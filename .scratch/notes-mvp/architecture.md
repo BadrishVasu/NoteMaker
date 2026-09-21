@@ -114,14 +114,21 @@ src/
                           performance and navigator in this file
     corpus.ts            in-memory whole corpus + subscribe(); the UI's single read surface
 
+  main.tsx      entry: builds auth + openSession, renders <App auth openSession />  (step 7)
+  session.ts    the composition root — see "Composition root" below  (step 7)
+
   platform/     browser and vendor glue, thin
     firebase.ts        initializeApp, initializeFirestore({ localCache: memoryLocalCache() }), getAuth
+    auth.ts            subscribeAuth / signIn (popup, 08) / signOut — with firebase.ts, the only
+                       firebase/auth importers  (step 7)
+    prefs.ts           per-device preferences in localStorage (Auto sync) — not store meta (step 6)
     persistStorage.ts  navigator.storage.persist()
     tabChannel.ts      BroadcastChannel wrapper
     lifecycle.ts       blur / visibilitychange / pagehide flush wiring (05's rule)
 
   app/          React. The only layer that renders.
-    AppShell, NoteList, SearchField, Editor, TitleField, TrashView, SyncStrip, EmptyStates, SignIn
+    App (auth gate: unknown → nothing, signed-out → SignIn, signed-in → AppShell key={uid}),
+    AppShell (takes a Session; no longer opens the store), NoteList, SearchField, Editor, TitleField, TrashView, SyncStrip, EmptyStates, SignIn
     hooks: useCorpus, useNote, useOutboxCount   (useSyncExternalStore over sync/corpus.ts)
 ```
 
@@ -129,6 +136,46 @@ src/
 because reconciliation reads no time. `updatedAt` is stamped at the edge, in the save path, and
 passed *in* as data. If a `Date.now()` ever appears under `domain/`, the property 02 proved has
 quietly stopped holding.
+
+## Composition root — `src/session.ts` — designer, 2026-09-21 (Builder's proposal, accepted with amendments)
+
+**Why the root, not `sync/` or `platform/`.** `session.ts` wires every layer together (store, persist,
+gateway, engine, corpus), so it sits above all of them — the same position `main.tsx` holds. Under
+`sync/` it would make `app/` import from `sync/` (breaks the rule) and make `sync/` own store-opening
+and `persist()`, which it doesn't. Under `platform/` it would make the thin vendor-glue layer depend on
+the engine, inverting the direction. Only `main.tsx` constructs it; `app/` sees it as a type.
+
+`openSession(uid): Promise<Session>`; `Session = { uid, store, corpus, syncNow(), wake(),
+subscribeFirstLoad, close() }`. The engine gains `onWrites` / `onRedirect` / first-load callbacks and
+still imports no corpus; connectivity is derived from snapshot delivery (`fromCache` before this
+session's first complete batch = "waiting for a connection"), never `navigator.onLine`.
+
+**Amendments (binding):**
+1. **`persist()` is requested, not awaited on the open path.** Firefox can prompt; opening the user's
+   Notes must not wait on a permission dialog. Record `meta.persistGranted` when it settles.
+2. **Sign-out order: flush the save queue → `session.close()` → `signOut()`.** `close()` stops the
+   engine, awaits any in-flight push to settle, then closes the store. Otherwise the last debounce
+   window of typing is lost on sign-out — a keystroke loss, which the store-first rule exists to rule
+   out. Notes stay on the device (Badrish, 2026-08-25).
+3. **Stale-open race.** `App` must close a session whose `openSession` resolves after its uid is no
+   longer current (sign-out or account switch mid-open). Never render a session for the wrong uid.
+4. **First-load status is the one sanctioned read surface besides `corpus`**, and it uses the same
+   `subscribe`/`getSnapshot` shape so `app/` reads it with `useSyncExternalStore`. No third one without
+   a design note.
+
+**Enforced by ESLint (with both-direction cases in `src/test/importBoundary.test.ts`):**
+- `src/app/**`: no import from `sync/*` except `sync/corpus`; `session` only as `import type`. Use
+  `@typescript-eslint/no-restricted-imports` with `allowTypeImports: true` — the core rule has no type
+  exemption. (It is a different rule name from the core one, so it doesn't hit the replace-not-merge
+  trap in `eslint.config.js`, but the negative controls are still required.)
+- `firebase/auth`: only `platform/firebase.ts` and `platform/auth.ts`.
+- `session.ts` imported (as a value) only by `main.tsx`; nothing under `domain/ store/ sync/ platform/`
+  imports it at all.
+
+**Testable seams:** `openSession` against `memoryNoteStore` + `fakeGateway` (injected; `main.tsx` passes
+the real ones) — asserts snapshot writes reach the corpus, redirect reaches the corpus, `close()`
+ordering; `App` gate with a fake `auth` and fake `openSession` — the three auth states, key-by-uid
+remount, and the stale-open race in amendment 3.
 
 ## `lastServerState` — ratified addition, 2026-08-25
 

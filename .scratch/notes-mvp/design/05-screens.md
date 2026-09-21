@@ -65,6 +65,32 @@ it is one strip for the app, not one per pane).
 Does not: decide search matching, decide list ordering algorithm (fixed: `updatedAt desc`,
 handed down from architecture.md), render the conflict `Compare` surface (ticket 11).
 
+### StorageError — Builder's call #2, step 7
+
+Renders full-screen, **in place of the entire shell** (not a strip, not layered over `NoteList` —
+there is no list to show, since the per-uid IndexedDB database that failed to open is the only
+source of one). Reached when opening the app's IndexedDB database rejects or the browser has no
+IndexedDB at all (private-browsing lockouts in some browsers, corruption, a blocked storage
+permission). At step 7 this happens **after sign-in succeeds** — the database is per-uid, so it
+can only be opened once the uid is known — so the sequence is `SignIn` → (success) → attempt to
+open storage → this state on failure, in place of where the shell would otherwise mount.
+
+> Can't open this device's note storage. Nothing has been changed — try reloading.
+
+Confirmed as-is. It's accurate (nothing has been attempted yet, so nothing is lost), it's
+terminal (matches this app's rule that failure states don't spin forever), and "try reloading" is
+the one action that's actually likely to help (a transient lock or a one-off browser hiccup often
+clears on reload; this app has no in-app retry button anywhere else either, per §6's sign-in
+failure using the same terminal-with-manual-retry shape).
+
+One primary button, `<button>Reload</button>`, calling `window.location.reload()` — the only
+control on the screen besides the message. No sign-out option here: the failure is about *this
+device's storage*, not the account, and offering sign-out would incorrectly suggest switching
+accounts fixes a device-local problem.
+
+Props: none beyond the trigger condition itself — this is a terminal screen with one action, not
+a component that takes configuration.
+
 ---
 
 ## 2. NoteList (+ its row)
@@ -211,6 +237,53 @@ together; also flushed on unmount, `blur`, `visibilitychange → hidden`, `pageh
 does not restate the debounce/flush mechanism (architecture.md's `platform/lifecycle.ts` owns
 it) — `Editor` just calls `onTitleInput`/`onBodyInput` on every native input event and trusts the
 caller to debounce.
+
+**Re-seeding the open Note on a remote edit — Builder's call #1, step 7.** The Mathematician's
+2026-09-21 amendment to ticket 02 makes re-seeding *safe* exactly when the editor's buffer equals
+its base content and no save is queued or in flight (his rule 5) — this is the idle-open-Note
+case: nobody has typed since the Note was opened, or everything typed has already been committed
+and confirmed clean. `Editor` is told this via a prop, `canReseed: boolean`, computed by the
+caller from the save queue; `Editor` does not compute it.
+
+**Ruling: re-seed silently, no banner, no notice.** This app already has a standing rule that a
+remote edit to a *closed* Note updates its list row with no announcement — a re-seed is the same
+event, just visible because the Note happens to be open. Ticket 05 is explicit that this app has
+no toast, no spinner, no error dialog anywhere; inventing one occurrence for this case would be
+the one inconsistency in an otherwise disciplined UI. It is also the honest read of what
+"idle" means here: `canReseed` is only true when the user has typed nothing unconfirmed, so
+nothing of theirs is at risk — the app is simply keeping a document current, the same thing every
+synced-notes app does to a note you're merely looking at, not editing.
+
+This is a different event from the conflict-redirect silent swap in §9 (there the content the
+user is looking at is *unchanged*, only the id underneath it moves). Here the visible text
+genuinely changes, so it needs its own rule for caret/scroll/selection, not a borrowed one:
+
+- **Implementation model: treat it exactly like a fresh open.** Remount `Editor` (new React
+  `key`, e.g. keyed on `note.rev` in addition to `note.id`) rather than mutating the mounted
+  textarea's value in place — this reuses the same "seed once per mount" contract the component
+  already has, instead of adding a second code path for "update a live textarea's content out
+  from under the user."
+- **Caret and selection**: reset to the start of the body (position 0), same as any other fresh
+  open. Any active text selection is discarded — the old selection's character offsets refer to
+  text that no longer exists at those offsets, so there is nothing meaningful to preserve. This
+  applies uniformly whether the user is focused-but-idle, has a selection, or is not looking at
+  the editor at all.
+- **Scroll position**: resets to the top of the body, matching a fresh open. Do not attempt to
+  preserve scroll offset — the content it was anchored to may have moved or been rewritten.
+- **Focus**: never stolen. If the user's focus was already inside `TitleField` or the body
+  textarea, focus stays where it structurally is (the remounted field of the same kind) — the
+  caret resets per the point above, but the field itself doesn't lose focus to, say, the list. If
+  focus was elsewhere (the list, the overflow menu, another pane), it stays there; re-seeding
+  never moves focus into the editor.
+- **`Preview` toggle**: `previewOpen` is already local state reset on every Note switch (§4
+  above); a re-seed is not a Note switch (same `id`, same open Note) but should reset it anyway,
+  for the same reason a remount does — the previewed markdown is now the old text.
+- **When `canReseed` is false** (something typed since open, even if since committed and clean —
+  i.e. a save is queued or in flight): do not re-seed. Per the Mathematician's rule, the next
+  keystroke correctly produces a Conflict copy instead, which is the safety property this whole
+  mechanism protects. `Editor` shows nothing different while this pends — no "this note has
+  unsynced remote changes" notice, because that would be describing internal state the user has
+  no action to take on, and the app doesn't warn about states it can't act on.
 
 **`Preview`'s markdown subset — Builder's scope, stated here so it's a decision, not whatever
 Frontend gets round to.** There is no markdown dependency in this project and none is being
@@ -474,6 +547,48 @@ buildable. Minimal: app name/tagline, one primary button `<button>Continue with 
 and — only in the failure case — the sign-in-no-network copy from §6 rendered beneath it. No
 spinner state beyond native button press feedback; `signInWithPopup`'s own promise resolves or
 rejects, there is nothing in between to render.
+
+### Sign-in outcomes other than "no network" — Builder's call #3, step 7
+
+`signInWithPopup` has more outcomes than success and network failure. Ruling on each:
+
+- **User closes the popup themselves** (`auth/popup-closed-by-user`, and its sibling
+  `auth/cancelled-popup-request` when a second click races a still-open popup). **Agreed with
+  Builder's proposal: nothing.** The button returns to its normal state, no message. This is the
+  user changing their mind mid-flow, not a failure — the app has no more standing to comment on
+  it than a browser has standing to comment on a closed native dialog. Rendering an error here
+  would be the app scolding the user for a click they made on purpose.
+- **Browser blocks the popup** (`auth/popup-blocked` — most commonly Safari's stricter popup
+  heuristics, or a user-installed popup blocker). This is not a "try again" situation the way
+  no-network is, because retrying with the same button produces the same block — the user needs
+  to act on the browser first. Distinct copy, same placement (beneath the button, same slot the
+  no-network copy uses — the two are mutually exclusive, never both shown):
+
+  > Your browser blocked the sign-in popup. Allow popups for this site, then try again.
+
+  Same `<button>Continue with Google</button>` remains the retry affordance — no separate button —
+  since "try again" after allowing popups is genuinely the same action.
+- **Any other rejection** (an unexpected Firebase error not covered above — e.g. a config or
+  project-side failure). Falls back to the no-network copy's wording pattern rather than a bare
+  stack trace or a blank failure: reuse the existing no-network slot with a generic line rather
+  than inventing a third string for a case nobody can name in advance:
+
+  > Something went wrong signing in. Check your connection and try again — nothing is lost.
+
+  This is a deliberate widening of §6's existing copy (dropping "Can't reach Google" as the
+  specific cause) used only for the residual "none of the above" bucket, not a new visible state —
+  it occupies the exact same slot as the no-network message and is never shown alongside it.
+
+- **The instant between "auth unknown" and rendering `SignIn` or the shell.** Firebase reads the
+  persisted session from IndexedDB before it knows whether a user is signed in — typically
+  under 100ms, and it happens offline too since it's reading local storage, not calling the
+  network. **Agreed with Builder's proposal: render nothing** (a blank page, or whatever the
+  static HTML shell/root element already looks like before React mounts its first meaningful
+  screen) rather than a splash screen. A splash screen for a sub-100ms gap is worse than a blank
+  frame: it either flashes too briefly to read as anything but a glitch, or — if given a minimum
+  display time to avoid that — it adds latency to every single app open to make an interval nobody
+  perceives feel intentional. Nothing to build here beyond: don't render `SignIn` or the shell
+  until Firebase's auth-state listener has fired once.
 
 ---
 

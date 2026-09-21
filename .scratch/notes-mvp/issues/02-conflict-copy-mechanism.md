@@ -284,6 +284,72 @@ existing limit.
 **Verdict: no change to the reconcile mechanism, the guard predicate, or the document schema.**
 Manual send is implemented one layer up, in the flush trigger, not in 02's transaction or guard.
 
+### Amendment, 2026-09-21 — the editor buffer is a dirty row (mathematician)
+
+**The manual-send amendment above rests on a premise the build does not satisfy.** It says the
+snapshot guard suffices because "the mirror write is already synchronous per keystroke". Step 6
+debounces the mirror write by 600 ms, and IndexedDB cannot make a write synchronous anyway. During
+the gap, the user's text exists only in the editor, and the mirror row can be clean. A snapshot
+adopts the other device's rev S onto that clean row (cell 6). The flush then runs `recordEdit` on
+the adopted row: clean→dirty, `baseRev := S`, content := our buffer. The push takes the **clean**
+branch and silently overwrites the other device's edit. There is no copy. This is P1b broken at
+the layer above the mirror. It is reachable in the most ordinary case 02 promises to preserve, two
+devices typing online at once, and a throwaway spike against the real `applySnapshot` / `recordEdit`
+/ `decide` confirmed it (`decide` → `write/clean`). Removing the debounce does not close it. The
+keystroke→commit window shrinks but is still nonzero. It also does nothing for an idle open editor
+(uncontrolled textarea) whose Note was adopted underneath it: the next keystroke sends a stale
+whole body.
+
+**The rule: 02's snapshot guard applies to the editor buffer.** The buffer is a dirty row that
+lives in memory, and its base may advance only through its own commits.
+
+1. **Buffer and base.** For each open Note the save queue holds `buffer`, the full editor content
+   (title, `titleIsCustom`, body, `deletedAt`), and `base`, the `LocalNote` whose content the buffer
+   derives from. `base` is set in exactly three places: (a) when the editor seeds its fields from a
+   row (mount or re-seed), to that row; (b) after each of the queue's own commits, to the row it
+   wrote; (c) on `redirect(from, to)`, to the `to` row. A snapshot or push commit never moves
+   `base`. A change is merged into `buffer`. It is never merged onto the corpus row.
+2. **One writer at a time.** Every mirror write (snapshot apply, push commit, edit commit, create)
+   runs in one shared mutual-exclusion section. Each section is one store transaction that reads its
+   rows with `tx.get`, then does `corpus.applyWrites(committed writes)`, then (for the engine) any
+   `redirect`, all before the section is released. The target id of an edit commit is resolved at the
+   start of its section, after any re-key. Outside such a section, nothing reads a row in order to
+   write it.
+3. **The edit commit.** Read `r = tx.get(id)`. Define `sameVisible(r, base)` as `sameContent(r, base)`
+   plus equal null-ness of `deletedAt`, which is the fast-forward predicate.
+   - `r` present and `sameVisible(r, base)`: **ordinary edit**, `recordEdit(r, buffer, …)`. The
+     buffer descends from content equal to `r`'s, so `r`'s lineage is the buffer's lineage. This covers
+     "clean at a rev our own push made" and a fast-forward adopt with no special case.
+   - Otherwise (the row was adopted underneath, or is absent): **concurrent edit**,
+     `recordEdit({...base, baseRev: base.rev, pendingRev: null, baseContent: null}, buffer, …)`,
+     written at `id`. That gives `baseRev := base.rev` and `baseContent := content at base.rev`.
+   - Then put the row, publish it, and set `base := next`.
+
+   **Why the concurrent edit is sound whatever the row holds:** a push destroys server content only
+   through the `clean` branch, which requires `srv.rev === baseRev = base.rev`, and the buffer
+   descends from the content at `base.rev` by construction. P1b holds. `base.rev` is a rev this
+   device wrote or displayed from delivery, so the corrected `baseRev` invariant holds too.
+   `baseContent` equals the content at `baseRev`, so the appendix-3 lineage holds. An absent row is
+   recreated, never dropped.
+4. **Redirect.** The engine emits `redirect(flight.noteId, action.copyId)` exactly when `commitPush`
+   returned a `put` at `action.copyId` (`conflictCopy` with `free`), typed or not. It emits it after
+   that section's `applyWrites` and inside the section. On it, the queue re-keys `buffer` and any
+   pending timer from `from` to `to` and sets `base := corpus row at to`. Under rule 2 that row's
+   content always equals the old base's. Untyped: the copy holds the flight content, which is the
+   queue's last commit. Typed: the migrated row holds `cur.pendingRev`'s content, which is again the
+   queue's last commit. So the next flush is an ordinary edit at `to`, and Gap C's lineage is
+   untouched. No other outcome is a redirect. A missed or late redirect degrades to rule 3's
+   concurrent branch, which gives a spurious second copy and never a loss.
+5. **Re-seeding the display is permitted, never required for safety.** If the buffer equals `base`'s
+   content and no commit of it is queued, the editor may re-seed from the current row (rule 1a). That
+   is UI/UX's call.
+
+**Scope.** Two tabs typing into one Note stays 03's accepted last-save-wins decision. Rule 3's
+concurrent branch overwrites a dirty row from another tab exactly as step 6 does today. It is no
+worse, and fixing it is not in scope. Nothing in the reconcile, the snapshot table, the document or
+the rules changes. This amends the save path (`app/saveNote.ts`) and adds one emission to the
+engine.
+
 ## Appendix — re-verification with `snapshot-delivered` (mathematician, 2026-08-25)
 
 Builder challenged the Verification section above: it lists four event kinds — `edit`, `delete`,
