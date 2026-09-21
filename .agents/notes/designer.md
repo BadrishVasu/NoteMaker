@@ -242,6 +242,16 @@ Builder asked; six settled decisions, none mine to reopen. Changed: the port ske
 
 Dead end, do not reinstate: gating pushes until the listener's first complete batch. Not needed — the adopt view falls back to the transaction read — and it would stall the Outbox for the entire offline case this app exists for.
 
+### 2026-09-21 — step 7 composition root: `src/session.ts` accepted, four amendments
+
+Builder's proposal, and it is the right shape: a non-React root beside `main.tsx`, since it wires every layer and so belongs above all of them. `sync/session.ts` rejected (forces an `app/`→`sync/` import, and gives `sync/` store-opening and `persist()`); `platform/` rejected (thin glue would depend on the engine). Recorded under "Composition root" in architecture.md.
+
+What I added, and why each matters: `persist()` must not block open (Firefox prompts); **sign-out = flush save queue → close → signOut**, or the last debounce window is lost — the one keystroke-loss path step 7 opens; the stale-open race in `App` (openSession resolving for a uid no longer current); first-load status as the only second read surface, same `useSyncExternalStore` shape.
+
+Found while checking: the "app/ imports nothing from sync/ but corpus" rule was **never lint-enforced** — only prose since 2026-08-25. Now specified as `@typescript-eslint/no-restricted-imports` with `allowTypeImports` (core rule can't exempt types). A boundary written only in prose is a boundary nobody has tested.
+
+Step-6 FYIs accepted without objection: Auto sync in localStorage via `platform/prefs.ts` (per-device is the right scope, and 03's `MetaShape` stays closed); `AppShell`'s injected `corpus` is the seam `Session` now fills.
+
 ### Testable seams I named for the Builder and for ticket 09
 
 `NoteStore` port (contract suite run against a fake and against `idb` — this is how 09 gets a second

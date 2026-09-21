@@ -36,12 +36,37 @@ and how the Outbox is surfaced. Everything a Note is read and written through.
       pinned by a deterministic MutationObserver test.
 - [x] Boot failure (IndexedDB won't open) now shows a terminal message instead of an infinite
       "Getting your notes…". Added **after** QA's run; covered by its own test, not QA-verified.
-      Its copy is builder's and **awaits UI/UX review** — 05-screens.md has no state for it.
+      Its copy was builder's; **UI/UX confirmed it on 2026-09-21** and spec'd it as `StorageError`
+      (full screen, one `Reload` button) in 05-screens.md, built at step 7.
 - [x] **Badrish tested step 6 locally himself, 2026-09-21** (`npm run dev`, `/?seed`), after
       builder's green light: "Testing is done. Great job team!" Status stays `verified`, not
       `shipped` — nothing is pushed, so nothing is deployed.
 - [x] Totals after the QA round: **869 unit tests in 34 files**, 72 emulator tests in 4 files;
       lint, typecheck, build green; 7 consecutive full-suite runs green on the final code.
+- [x] **Step 7, 2026-09-21 — auth, session, first-load states, the save path rebuilt.**
+      `App.tsx` gates on auth state (renders nothing until Firebase reports; `SignIn` with UI/UX's
+      three outcome copies; `StorageError` with Reload). `AppShell` runs on a `Session` (no longer
+      opens storage). The four first-load states come from session status. Sign-out is flush →
+      `session.close()` → `auth.signOut()`. `Sync Now` flushes the debounce, then syncs; turning
+      Auto sync on wakes the engine; `visibilitychange → visible` wakes it. The dev `?seed` path is
+      removed (`devSeed.ts` deleted: its fake-rev rows mean nothing against a real server).
+- [x] **Save queue rebuilt on 02's amendment**: buffer + base per open Note; a commit reads the
+      stored row inside the lock and is ordinary only if the row still shows base (`bufferEdit`).
+      The redirect alias serves only the edit stream open at redirect time (mathematician's review;
+      QA found the id-keyed version sent edits of a reopened original to the copy and spun off a
+      third copy).
+- [x] **Re-seed** (UI/UX ruling): a remote edit to the idle open Note remounts the editor silently,
+      caret to 0, focus kept in its field. Runs in a **layout** effect, pinned by a MutationObserver
+      test (a passive effect left a gap that clean-overwrote the other device).
+- [x] **Popstate now remounts the Editor.** Step 6 kept the previous Note's text under the new id
+      on browser back between two Notes, and the next keystroke wrote it there. Fixed test-first.
+- [x] Signed-out screen checked in a real browser at 1280 and 375 px (centred, no horizontal
+      scroll, no console errors). **The signed-in shell has not been looked at against live
+      Firebase**: that needs Badrish's sign-in.
+- [x] QA, step 7: **verified**, after the alias and re-seed fixes were re-confirmed.
+- [x] Totals after step 7: **961 unit tests in 40 files, 74 emulator tests in 5 files**; lint,
+      typecheck, build green (957 before QA added 4).
+- [ ] Live two-device end to end on `notemaker-claude` (Badrish signs in; steps in the Day 8 report).
 - [ ] Real PWA icons — still placeholder art; UI/UX deferred it out of the step-6 spec.
 
 ## Decisions
@@ -70,7 +95,7 @@ and how the Outbox is surfaced. Everything a Note is read and written through.
 - The too-large-to-sync check counts UTF-8 bytes (`domain/size.ts`), never code units — builder —
   2026-09-18
 - `Auto sync` is a device preference in `localStorage` (`platform/prefs.ts`), NOT a store `meta`
-  key — keeps ticket 03's `MetaShape` untouched — builder — 2026-09-18. Designer not yet told.
+  key — keeps ticket 03's `MetaShape` untouched — builder — 2026-09-18. Designer told 2026-09-21: no objection.
 - Preview is a closed, hand-rolled markdown subset returning React elements only; no
   `dangerouslySetInnerHTML`, no markdown dependency — builder — 2026-09-18
 - `initialSyncCompletedAt` has one writer, `sync/engine.ts`. Step 6 treats the mirror as settled
@@ -82,7 +107,7 @@ and how the Outbox is surfaced. Everything a Note is read and written through.
 ## Open questions
 - None blocking step 7.
 
-## Step 7 must handle (found at step 6, deliberately not built without an engine)
+## Step 7 must handle — all closed at step 7, 2026-09-21 (kept for the record)
 - **A pending save across a conflict redirect.** The save queue keys pending and in-flight
   content by `noteId`. If the redirect lands inside the 600 ms debounce, the user's latest
   keystrokes flush to `from` — the id that now holds the *other* device's text — instead of to the

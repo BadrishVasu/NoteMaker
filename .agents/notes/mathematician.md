@@ -1,5 +1,90 @@
 # Mathematician — notebook
 
+## 2026-09-21 — NoteMaker, review of the built 02 amendment (Builder, Day 8)
+
+Reviewed the uncommitted working tree: `domain/edit.ts`, `app/saveNote.ts`, `AppShell.tsx`, and the
+engine's emission and lock. `bufferEdit`, the FIFO `createExclusive`, in-section publish and
+redirect, `redirectTarget`, and the re-keying all match rules 2-4. I found two defects.
+
+- **Builder's `redirected` alias is right for a stale keystroke and wrong for everything else.**
+  `seed` resolves through it, so reopening `from` later puts `base := row(from)` under key `to`. The
+  commits then land at `to`: a concurrent branch that spreads `from`'s `conflictOf`/`conflictBase`
+  onto the copy. If `to` is dirty or queued, `seed` is refused, the buffer at `to` takes A's body,
+  and an ordinary commit makes a clean overwrite of the copy on the server. That is our conflicted
+  text lost (P1). You don't need a race to reach it: any Note opened earlier this session that
+  conflicts later is affected. **Rule:** an alias names the edit stream that was open at redirect
+  time, not the Note id. `seed(row)` never resolves, and it drops the `row.id` key. On a redirect,
+  repoint every alias whose value is `from` to `to`, so lookups are single-hop. Chains then work,
+  and a re-seeded middle link doesn't redirect anyone. The clean form is seed returning a stream
+  handle, which removes the map. I held that back as optional because it's more invasive.
+- **Reseed runs in a passive effect.** `reseed` moves base and buffer. Then the remount happens in a
+  later render, and in between there is a task boundary where the old textarea is live. A keystroke
+  in that window gives buffer = old text on the new base. `sameVisible` holds, so it's an ordinary
+  edit, which is a clean overwrite of the other device's edit. That is P1b broken. It's the same
+  class as step 6's focus race. **Fix:** make the reseed effect `useLayoutEffect`, so the
+  mutation and the remount commit happen in one task.
+
+Dead end: "remove the alias, drop the lazy seed". A stale keystroke then either drops (loss) or
+lazily seeds from the adopted row (overwrite). The alias is needed. Only its scope was wrong.
+
+Lock markers: `a4873fc2646d5815d` (Sep 18) is dead. Its only effect is that `logbook-gate` never
+discharges `.since`/`.agents` for that project, and the hook documents that as benign. The
+`2d6ec08b9037` pair is already gone. Ruling: delete by hand. The hook change is a 24 h staleness
+bound on `.live.*` in the gate. This is the second leak, so it's worth doing. It is Badrish's call,
+because a >24 h run would only get an early discharge.
+
+## 2026-09-21 — NoteMaker, step 7 gate: the editor buffer vs. the mirror (Builder's issues 1–3)
+
+Builder was asked about a redirect landing mid-save, and found that the problem is wider than that.
+He was right on all three counts. Ruling is in 02 as "Amendment, 2026-09-21 — the editor buffer is a
+dirty row".
+
+- **Issue 1, real and the worst of them.** I confirmed it with a throwaway vitest spike against the
+  real `applySnapshot`/`recordEdit`/`beginPush`/`decide`, then deleted it. Clean row R0, debounce
+  pending, adopt S (cell 6), flush: `decide` gives `write/clean`, which overwrites B silently. Under
+  the buffer rule it gives `conflictCopy`. It is reachable whenever two devices type online at once,
+  including continuous typing after our own clean push cleans the row. The redirect variant is the
+  same bug: `from` is clean at the server rev after migration.
+- **Issue 2, real.** An uncontrolled textarea sends its whole body. The row's display can move under
+  it, and nothing tracks the buffer's base.
+- **Issue 3, real.** The IDB readwrite transactions serialise, but `commitEdit` reads the corpus
+  *outside* its transaction. An engine transaction created before the put, whose result is not yet
+  in the corpus, gets reverted by a put built from the stale row. That produces a spurious copy of
+  our own text.
+- **Same shape, not in the brief:** Delete after a remote adopt clean-deletes the other device's
+  body into a tombstone. A remote trash during the debounce is silently restored by the pending
+  patch (`deletedAt: null` from the stale base). `writeNow`'s `row === undefined → return` drops
+  the keystrokes.
+
+**Rule, in one sentence:** 02's snapshot guard lifted to the buffer. The queue holds `buffer` and
+`base`. `base` moves only on editor seed, own commit, or redirect. The edit commit reads in-tx: if
+`sameVisible(r, base)` it is an ordinary `recordEdit(r)`, otherwise `recordEdit(base-as-clean-at-base.rev)`.
+There is one writer mutex over all mirror writes, and it publishes to the corpus and emits the
+redirect inside the section. The redirect fires iff `commitPush` put a row at `copyId`. Soundness in
+one line: the clean branch needs `srv.rev === base.rev`, and the buffer descends from `base.rev`.
+
+### Dead ends, do not re-walk
+- **(d) mirror write per keystroke, no debounce.** It doesn't close the hole, because IDB is async
+  and an adopt transaction can order before the put. It also leaves issue 2 untouched, and it costs
+  a write, a corpus notify and a push wake per keystroke. Once the base check exists, the debounce is
+  harmless.
+- **Discriminating on rev equality (`r.rev === base.rev`).** It is sound, but a fast-forward adopt
+  (same content, new rev) then produces a spurious copy. Content equality (`sameVisible`) is sound
+  too, because P1b is about content lineage, and it has no spurious case.
+- **Using base's own lineage (`recordEdit(base)` when base is dirty at T with baseRev R) for the
+  concurrent write.** It is sound, but base's lineage goes stale once the engine cleans T. In
+  single-tab, concurrent-with-dirty-base implies T landed, so `baseRev := T` is the nearest fork
+  point. Builder's candidate (b) was right on this.
+- **The queue searching for where its rev went (`conflictCopyId(from, dev, ?)`).** The copy id is
+  keyed by *flightRev*, not by the queue's last rev, so it can't be found without the flight history.
+  Use an explicit redirect event, ordered by the mutex.
+- **Fixing two tabs typing into one Note here.** That is 03's accepted last-save-wins (Overseer has
+  it on record). The concurrent branch keeps exactly today's behaviour for it.
+
+Open: the re-seed of a clean buffer on remote adopt is UI/UX's call. Without it, every first
+keystroke after a remote edit on an idle open Note makes a (correct) Conflict copy. That is a real
+UX cost in the "same note, one device at a time" workflow, so I recommended re-seeding.
+
 ## 2026-09-17 — Global logbook hooks: the "SubagentStart did not fire" false alarm
 
 Asked by the Overseer via Claude (Badrish's request). Subject is `~/.claude/hooks/`, not NoteMaker

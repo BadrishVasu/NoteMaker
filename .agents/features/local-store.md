@@ -23,8 +23,21 @@ network transport around it, not a store the app reads.
       **The suite is mutation-tested, not trusted** — it went green on its first run, and eight
       deliberate breakages of each store were checked to fail it. One did not: the aliasing test
       covered `get` and not `getAll`, which is the read the corpus is actually built from. Fixed.
-- [ ] `applySnapshot` / `reconcile` pure units
-- [ ] Mirror boot, `initialSyncCompletedAt`, `navigator.storage.persist()`
+- [x] `applySnapshot` / `reconcile` pure units — step 3 (see `sync-engine.md`).
+- [x] **Mirror boot per uid, `initialSyncCompletedAt`, `navigator.storage.persist()` — step 7,
+      2026-09-21.** `src/session.ts` opens `notemaker-<uid>` after sign-in and loads the corpus.
+      `persist()` (`platform/persistStorage.ts`) is requested on first sign-in and once per open
+      while denied, never awaited, and its answer recorded in `meta.persistGranted`. The stamp's
+      only writer is still `sync/engine.ts`; the step-6 `?? Date.now()` display fallback is gone.
+      A step-6 browser's `notemaker-local` database is abandoned, not migrated.
+- [x] **Read cost per open measured — step 7, 2026-09-21** (`src/sync/readCost.emulator.test.ts`).
+      A cold open at 500 Notes (~2 kB each) receives exactly 500 documents, in one complete batch,
+      once. Every cold open pays it again (no resume token survives the process). So **reads per
+      open = corpus size**, plus 2 per pushed Note (the transaction reads the Note and its copy
+      slot). At 20–50 opens/day that is 20–50 × N reads/day against the 50k free quota; ticket
+      03's tripwire (half the quota, 25k/day) is reached at **N ≈ 500 for a 50-opens/day Android
+      user** and N ≈ 1,250 at 20 opens/day. Not flipped now: `persistentLocalCache` stays the
+      sanctioned one-line reversal, and the trigger is corpus size, not a date.
 - [ ] BroadcastChannel cross-tab invalidation
 
 ## Decisions
@@ -92,5 +105,6 @@ Full reasoning lives on ticket 03; the constraints that forced each, in one line
   engine-level property and is booked at step 3 on `sync-engine.md`, not here. The function's doc
   comment now says so, so nobody reads its presence as coverage. Closed.
 - Growth story past ~2,000 Notes / ~20 MB — deferred to the map's "Not yet specified"
-- Read cost per app open under Android's constant background/reap cycle — Builder's step-7
-  measurement decides whether `persistentLocalCache` comes back on. Waiting on: builder
+- ~~Read cost per app open under Android's constant background/reap cycle~~ — **measured**, see
+  State: reads per open = N. Whether to flip `persistentLocalCache` now is Badrish's call on how
+  many Notes he expects to keep; the recommendation is to flip it before ~500 Notes.

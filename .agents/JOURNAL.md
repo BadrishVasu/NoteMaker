@@ -2,6 +2,53 @@
 
 Newest entry first. Append only.
 
+## 2026-09-21 (Day 8) — step 7 built: auth, session, first-load states, the engine wired
+**Worked:** builder, mathematician (×2), designer, ui-ux, qa
+
+**Moved:**
+- **The Mathematician's question grew before it was sent, and he confirmed it.** The step-6
+  save queue broke 02's premise ("the mirror write is synchronous per keystroke"): a remote edit
+  landing during the 600 ms debounce, or under an idle open editor, was **silently overwritten by
+  a clean push, with no copy**. This was the ordinary two-devices-online case, and step 6 was green
+  throughout. It is not live anywhere (nothing is deployed). His ruling is 02's "Amendment,
+  2026-09-21 — the editor buffer is a dirty row": buffer and base per open Note, one write lock for
+  every mirror writer, and ordinary-vs-concurrent decided by content. Built test-first, his table
+  end to end.
+- **Step 7 built in the main checkout**: `src/session.ts` (composition root, Designer's ruling
+  and four amendments, recorded in `architecture.md`), `platform/auth.ts` (popup, state not
+  tokens), `platform/persistStorage.ts` (first sign-in, retried per open, non-blocking),
+  `app/App.tsx` (auth gate, stale-open race, sign-out = flush → close → signOut),
+  `app/StorageError.tsx`, SignIn's three outcome copies (UI/UX), the four first-load states from
+  snapshot delivery, and the engine wired to the corpus with its redirect. Three new ESLint
+  boundaries from the Designer, tested both ways. `devSeed` removed.
+- **Found and fixed on the way:** browser back between two Notes wrote the previous Note's text
+  into the new one (popstate never remounted the Editor, a step-6 bug). Two defects in my own
+  first cut, caught by the Mathematician's review and QA: the redirect alias was keyed by Note id
+  (a reopened original's edits went to the copy and made a third copy), and the re-seed ran in a
+  passive effect (a keystroke in the gap clean-overwrote the other device). Both are fixed and
+  pinned.
+- **Read cost measured** (`readCost.emulator.test.ts`): reads per cold open = corpus size, every
+  open. The tripwire in 03 is reached at ~500 Notes for a 50-opens/day Android user.
+- **QA verified step 7** — first pass *verified-with-defects* (the alias; QA's tripwire showed the third-copy split), re-confirmed **verified** after both review fixes; QA added 11 tests (`src/test/step7.qa.test.ts`, `src/app/AppShell.qa.test.tsx`) and could not break either fix.
+- **Gates:** 961 unit tests in 40 files (QA added 4; 5 consecutive green runs at 957), 74 emulator tests in 5 files,
+  lint, typecheck and build green. 36 mutants across step 7, all killed.
+- Housekeeping: the Day 6 worktree folder is gone on its own, and the dead Sep 18 `.live.*` marker
+  is deleted by hand on the Mathematician's ruling.
+
+**Open:**
+- **The live two-device run** on `notemaker-claude` needs Badrish's Google sign-in (agents may not
+  enter credentials). The steps are in the report. Until it's done, step 7 is `built`/`verified`,
+  not proven end to end.
+- **Unpushed:** everything above `0532e87` (step 6, its QA round, and all of step 7). The exact range
+  by SHA is in the report. Pushing `main` deploys to `note-maker-f41.pages.dev`; each push needs
+  his word.
+- Badrish's calls: whether to flip `persistentLocalCache` now or at ~500 Notes, and the
+  Mathematician's proposed hook change (expire `.live.*` markers older than 24 h).
+- The build warns about a >500 kB chunk (Firebase). Not a failure.
+- Next: tickets 06 search, 12 back-button, 11 merge; real PWA icons.
+
+**Badrish:** No calls this session.
+
 ## 2026-09-21 (Day 7, closed) — Badrish tested step 6; Day 8 prompt written
 **Worked:** builder
 

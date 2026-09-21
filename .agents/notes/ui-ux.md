@@ -152,3 +152,41 @@ he's right that it under-counts emoji/CJK exactly where the threshold matters mo
 `Preview`'s markdown subset to his hand-rolled, no-dependency, `dangerouslySetInnerHTML`-free
 list. Nothing of mine survived unchanged in §7; worth remembering that "flag it and let someone
 with more context rule" beat guessing at a priority order myself.
+
+## 2026-09-21 — step 7, three rulings for real auth/sync
+
+Read the Mathematician's 2026-09-21 amendment to ticket 02 first (the editor buffer is a dirty
+row). Three calls from Builder, folded into `05-screens.md` directly rather than kept here:
+
+**1. Re-seeding an idle open Note on a remote edit.** The Mathematician's rule 5 makes this safe
+only when the buffer equals base and nothing is queued/in flight — that's the condition, not my
+call. My call was the UX treatment: **silent, no notice, treated as a remount** (new textarea
+value, caret to 0, scroll to top, selection discarded, focus never stolen from wherever it
+already was). Leaned on a rule I'd already established in the first session — this app has zero
+toasts/spinners/error dialogs anywhere, and a closed Note's row already updates from a remote edit
+with no announcement, so an open idle Note updating the same way is consistency, not a new kind of
+surprise. Explicitly distinguished from §9's conflict-redirect (there the *text* never changes,
+only the id underneath it) since Builder was right to flag they're different events — this one
+needed its own caret/scroll/selection answer, not a borrowed one. When `canReseed` is false
+(something typed and either queued or in flight), did **not** add a "this note has unsynced
+remote changes" notice — nothing actionable for the user to do with that information before their
+next keystroke resolves it as a Conflict copy anyway.
+
+**2. Storage failure copy.** Confirmed Builder's Day-7 wording as-is — accurate, terminal, and the
+one action offered (reload) is the one actually likely to help. Added it as a proper spec state:
+full-screen replacement of the whole shell (not a strip), reached after sign-in succeeds since the
+per-uid database only exists once the uid is known, one `Reload` button, deliberately no sign-out
+option (the failure is device-local storage, not the account — offering sign-out would misdirect
+the user toward the wrong fix).
+
+**3. Sign-in outcomes.** Agreed with both of Builder's proposals (popup-closed-by-user → nothing,
+button just sits there; the auth-unknown instant → render nothing rather than a splash, since a
+splash for a sub-100ms gap either flashes illegibly or adds a floor to every app open to justify
+its own existence). Added two things he hadn't asked for but the outcome space needed: distinct
+copy for the browser-blocked-the-popup case (telling the user to fix their browser, not to just
+retry, since retrying identically reproduces the block), and a generic fallback line for any other
+rejection Firebase might throw that isn't named in 05 — reusing the same copy slot as no-network,
+never shown alongside it, so there's no unbounded set of ad-hoc error strings waiting to be
+invented under time pressure later.
+
+No dead ends this session — all three were direct rulings, not investigations that hit a wall.

@@ -1,5 +1,62 @@
 # Builder's notebook — NoteMaker
 
+## 2026-09-21 (Day 8) — step 7: the question I was sent with was the smallest of three
+
+The prompt sent one question to the Mathematician: a redirect landing inside the save debounce.
+Reading the seams before sending it turned up two more of the same shape, and together they were
+worse than the one I was sent with. 02's manual-send amendment rests on "the mirror write is
+synchronous per keystroke". Step 6 debounces it 600 ms, and the uncontrolled editor has a base rev
+that nothing tracks. So two devices typing online at the same time **silently overwrote each other
+with no copy**. That was reachable in the most ordinary case, and every step-6 test was green.
+**Before sending a scoped question, read the seams it names; the brief's framing ("not data loss,
+it re-conflicts") was wrong, and I only saw it because I traced one push through `decide`.**
+
+What held:
+- **Asking before wiring.** The Mathematician's rule changed the save queue's whole shape (buffer
+  + base, one lock for all four writers, commit by content, not rev). Wiring the engine first
+  would have meant building it twice.
+- **Mutants on every rule.** 36 in total, all killed. One harness file, JSON mutant lists, multi-edit
+  mutants. The first run caught a false-survivor shape: a mutant that only adds an unused
+  variable proves nothing. Check each mutant actually changes behaviour.
+- **Parallel agents without parking.** Designer, Mathematician and UI/UX ran in the background
+  while I built the parts their answers couldn't change (persist, auth port, engine callbacks,
+  ESLint boundaries). I kept making tool calls, so I never ended a turn waiting.
+
+What I got wrong:
+- **My alias map.** I added `from → to` so a keystroke arriving before the shell re-rendered would
+  follow the text. I keyed it on the Note id instead of the edit stream. So a deliberate reopen of
+  the original Note sent its edits to the copy, and QA showed it spinning off a third, unprompted
+  copy. I caught the shape myself while writing the review brief, and QA and the Mathematician
+  both confirmed it independently. **A mechanism I add beside someone's rule goes back to them
+  before QA, not after.**
+- **The re-seed in a passive effect.** It was the same race as step 6's focus bug, and I didn't
+  recognise it the second time: `reseed` moves state now, and the remount lands a task later.
+  **Anything that moves the save queue's state and then remounts has to happen in one task:
+  a layout effect, pinned by the MutationObserver test.**
+- **Popstate never bumped `switchToken`** (step 6). Browser back from Note B to Note A kept B's text
+  under A's id, and the next keystroke wrote it into A. I found it by listing every path that
+  mounts the Editor. That list is how to find the choke point for "seed at mount".
+
+Dead ends, so nobody walks into them:
+- **Python text-mode writes on Windows turn LF into CRLF** across the whole file. The repo forces
+  `eol=lf`, and my mutant patterns (`\n`) then silently fail to match, which the harness reports
+  as MISSING. Always write with `newline='\n'`; after a session, sweep `file ... | grep CRLF`.
+- **`/tmp` in Git Bash is not `/tmp` for Windows Python.** Use the scratchpad path.
+- A heredoc containing a Python script with nested quotes broke bash parsing again. Scripts go in
+  files via Write, every time.
+- Screenshots in the Browser pane time out while Claude's window is hidden. `javascript_exec` with
+  `getBoundingClientRect` gave the layout check in one round trip.
+- The Day 6 worktree folder had already gone by the time I retried; whatever held it has let go.
+- The Mathematician ruled the Sep 18 `.live.*` marker dead, and I deleted it by hand. His
+  recommendation for the hook (expire markers older than 24 h) is Badrish's call.
+
+Carried:
+- The live two-device test needs Badrish's Google sign-in. No agent may enter credentials.
+- Read cost: reads per open = N. Flipping `persistentLocalCache` depends on how many Notes he
+  expects; the recommendation is before ~500.
+- Build warns about a >500 kB chunk (firebase auth + firestore). Not a failure; code-splitting is
+  later work, not step 7.
+
 ## 2026-09-21 (Day 7, close) — the green light held, and a carried item was already done
 
 Badrish tested step 6 himself and it passed. What made the green light worth giving was the

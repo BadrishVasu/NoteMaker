@@ -80,7 +80,28 @@ one.
       landed-stays-dirty) each turn the final suite red — all ten re-run against it 2026-09-17 (count
       corrected from "nine": Gap-A-only had only been run before P1 was added). Not a model check.
 
+- [x] **Step 7, 2026-09-21 — the engine wired into the running app.** `onWrites` (committed
+      `RowWrite[]`, never for a rolled-back transaction), `onSnapshot` (`fromCache` + the persisted
+      stamp → the first-load states), `onRedirect` via `domain/reconcile.redirectTarget`, all
+      delivered **inside** the shared write lock (`createExclusive`, injected as
+      `deps.exclusive`). A throwing app callback is contained, not reported as a failed push or
+      apply. `stop()` waits for in-flight pushes to commit, bounded by `PUSH_TIMEOUT_MS`.
+      Wired through `src/session.ts` (composition root). **Not yet run against live Firebase on two
+      real devices**: that needs Badrish's Google sign-in.
+- [x] **02 amendment 2026-09-21 built (mathematician: "the editor buffer is a dirty row").** The
+      step-6 debounce reopened the clean-overwrite hole 02 closed: a remote edit landing during
+      the debounce, or under an idle uncontrolled editor, was silently overwritten by a clean push.
+      The fix is `domain/edit.bufferEdit` plus the save queue's buffer/base and one lock for all four
+      mirror writers. His table is `src/test/savePath.test.ts` (two real sessions + queue + fake
+      server, each case converged), `src/app/saveNote.test.ts` and `src/domain/reconcile.test.ts`.
+      36 mutants across step 7, all killed.
+
 ## Decisions
+- One write lock for every mirror write (snapshot apply, push commit, edit commit, create); each
+  section publishes to the corpus (and the engine emits any redirect) before releasing it —
+  mathematician (02 amendment rule 2) — 2026-09-21
+- A redirect fires exactly when `commitPush` put a row at the copy id (conflictCopy with a free
+  slot), typed or not — mathematician (rule 4) — 2026-09-21
 - Import boundary replaces 02's name list: only `sync/firestoreGateway.ts` may import
   `firebase/firestore`, enforced by ESLint. Needs a second intra-file assertion that `runTransaction`
   is the only write path there — a name list cannot anticipate `addDoc`/`writeBatch` — builder —
