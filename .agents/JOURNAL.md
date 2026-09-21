@@ -2,6 +2,40 @@
 
 Newest entry first. Append only.
 
+## 2026-09-21 (Day 7, green-light round) — step 6 QA-verified; flaky test root-caused
+**Worked:** builder, qa, frontend (notebook only)
+
+**Moved:**
+- **QA verified step 6** — verdict *verified-with-defects*. One defect: `handleNewNote` had no
+  `.catch`, so a failed create was an unhandled rejection. Fixed, and QA re-confirmed the fix. QA
+  added 7 integration tests. Feature file now `Status: verified`.
+- **The intermittent failure was not the lineage walks.** A loop that kept every failing run's log
+  caught it: `AppShell > creating a note ... focuses the body`, 1 in 6. It was a real product race.
+  Body focus ran in a passive `useEffect`, a later task than the commit, leaving a frame where a
+  fast first keystroke landed on `New note`. Pinned by a deterministic MutationObserver test (red
+  3/3), fixed with `useLayoutEffect`, and confirmed in the browser: focus was on the body at
+  insertion in 5/5 real clicks.
+- **Boot failure fixed** (Frontend's note: check every fire-and-forget async). If IndexedDB can't
+  open, the app now shows a terminal message instead of "Getting your notes…" forever. The copy is
+  mine, pending UI/UX review.
+- Frontend's missing notebook entry is written, dated for the build with a post-cutoff note.
+- **Gates on the final code:** 869 unit tests in 34 files, 72 emulator tests in 4 files, lint,
+  typecheck and build green, 7 consecutive full-suite runs green. Commit `ec9ccc5` plus this
+  logbook commit.
+- **Green light given to Badrish** to test locally (steps in the report). That is not a push
+  authorisation: pushing `main` deploys to `note-maker-f41.pages.dev`.
+
+**Open:**
+- **Unpushed:** everything above `0532e87`. The exact range by SHA is in the report; each push
+  needs his word.
+- The boot-failure copy needs UI/UX review.
+- Unchanged from the entry below: the Designer should be told about `platform/prefs.ts` and the
+  `corpus` prop; the Mathematician is needed for the redirect-vs-pending-save item at step 7; the
+  leaked `.live.*` marker: now **one**, `a4873fc2646d5815d`, the first Frontend run, which was never resumed. The second run's marker was cleaned when I resumed that agent and it stopped normally, so resuming a crashed agent clears its marker. Plus the stale `2d6ec08b9037` pair; and the
+  undeletable empty worktree folder.
+
+**Badrish:** "Please make sure if everything works fine. I'll test after your green light."
+
 ## 2026-09-18 (Day 7) — step 6 built: shell, list and editor, offline-only
 **Worked:** builder, ui-ux, frontend
 

@@ -1,5 +1,5 @@
 # Feature: Editor and app shell
-Status: built
+Status: verified
 Owner: ui-ux (design) → frontend (build)
 Tickets: [05 · Editor and app-shell UX](../../.scratch/notes-mvp/issues/05-editor-and-shell-ux.md)
 Spec: [`design/05-screens.md`](../../.scratch/notes-mvp/design/05-screens.md) — the buildable form of 05
@@ -28,8 +28,17 @@ and how the Outbox is surfaced. Everything a Note is read and written through.
       custom-emptied copy, Preview (raw HTML inert, `javascript:` link dropped), search and
       no-results, Trash banner + read-only + Restore, strip in Auto-sync on and off states,
       persistence across reload, no `initialSyncCompletedAt` written, no console errors.
-- [ ] **Not QA-verified.** QA has not run against this slice. `Status: built`, not `verified`,
-      until it does.
+- [x] **QA-verified, 2026-09-21** — verdict *verified-with-defects*, one defect (`handleNewNote` had
+      no `.catch`), fixed by builder and re-confirmed by QA. QA added 7 integration tests. See
+      `.agents/notes/qa.md`.
+- [x] **Flaky test root-caused and fixed, 2026-09-21** — the AppShell new-Note focus test, not the
+      lineage walks. Passive-effect focus left a real unfocused frame; now `useLayoutEffect`,
+      pinned by a deterministic MutationObserver test.
+- [x] Boot failure (IndexedDB won't open) now shows a terminal message instead of an infinite
+      "Getting your notes…". Added **after** QA's run; covered by its own test, not QA-verified.
+      Its copy is builder's and **awaits UI/UX review** — 05-screens.md has no state for it.
+- [x] Totals after the QA round: **869 unit tests in 34 files**, 72 emulator tests in 4 files;
+      lint, typecheck, build green; 7 consecutive full-suite runs green on the final code.
 - [ ] Real PWA icons — still placeholder art; UI/UX deferred it out of the step-6 spec.
 
 ## Decisions

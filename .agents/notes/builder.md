@@ -1,5 +1,39 @@
 # Builder's notebook — NoteMaker
 
+## 2026-09-21 (Day 7, green-light round) — the flake was a product bug, and my suspect was wrong
+
+I suspected the flake was the lineage walks I had just given a time budget, because that was the
+test I had most recently seen time out. The loop said otherwise on its second run:
+`AppShell > creating a note ... focuses the body`, 1 failure in 6 clean runs. **I had a suspect
+before I had a capture, and the suspect was the test I'd touched last.** Recency is not evidence.
+The loop that kept every failing run's full log cost one short script and settled it in minutes.
+
+The root cause was in the product, not the test. `Editor` focused the body in a passive
+`useEffect`, which React runs in a later task than the commit that inserts the textarea. So
+there was a real window where the body was on screen but focus was still on `New note`. The
+test's `waitFor` resolves on "textarea exists" and landed in that window about 1 time in 6. So can
+a fast first keystroke. **An intermittent test is a measurement of a race; before calling it
+flaky, ask what the race is in production.**
+
+Turning it deterministic was the part worth keeping. A `MutationObserver` callback is a
+microtask queued by the commit's own DOM insertion. It runs after the commit and its layout
+effects, and before any later task, so it observes exactly the gap. It has to be rendered outside
+`act`, which would flush the passive effect and hide the gap. Red 3/3 before, green after. On
+evidence: seven green runs in a row is not proof. At 1-in-6, an unfixed test is all-green in
+seven runs about 28% of the time. The deterministic test is the proof; the loop only backs it up.
+
+Also this round:
+- QA's defect (`handleNewNote` with no `.catch`) fixed. **Frontend's review note was right to
+  generalise it**: grep every `void (async` in AppShell. There was exactly one more — the boot
+  effect — and IndexedDB failing to open left the app on "Getting your notes…" forever. Fixed
+  with copy I wrote myself, flagged for UI/UX review. Copy is their domain; a spinner that never
+  ends was not something to leave standing over a green light.
+- **I wrote "35 files" into the feature file from memory, one day after recording "count with the
+  tool", then ran the tool: 34.** Fifth time I've done this. The fix that works is ordering: run
+  the command *before* opening the file to write the number, never after.
+- Last session's `To Badrish` block contained a paragraph in Claude's voice. I don't write
+  Claude's words; I speak for myself and Claude adds its own.
+
 ## 2026-09-18 (Day 7, later) — I parked on an agent again, then misread the tree
 
 **The slip, fourth time.** I launched Frontend in the background, wrote "I'll report when it
