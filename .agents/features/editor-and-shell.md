@@ -67,6 +67,11 @@ and how the Outbox is surfaced. Everything a Note is read and written through.
 - [x] Totals after step 7: **961 unit tests in 40 files, 74 emulator tests in 5 files**; lint,
       typecheck, build green (957 before QA added 4).
 - [ ] Live two-device end to end on `notemaker-claude` (Badrish signs in; steps in the Day 8 report).
+      **First attempt, 2026-09-21: sign-in failed.** Cause: `.env.local` holds the retired API key
+      (see journal). Waiting on Badrish to paste the current key and rerun.
+- [x] The generic sign-in failure shows its Firebase code (only that bucket), 2026-09-21, after
+      the live test hid `API key expired` behind "check your connection". Builder's copy change;
+      **UI/UX to review** and fold into 05-screens.md.
 - [ ] Real PWA icons — still placeholder art; UI/UX deferred it out of the step-6 spec.
 
 ## Decisions

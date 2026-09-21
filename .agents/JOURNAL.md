@@ -2,6 +2,35 @@
 
 Newest entry first. Append only.
 
+## 2026-09-21 (Day 8, live test) — sign-in fails on localhost: `.env.local` holds the retired key
+**Worked:** builder
+
+**Moved:**
+- **Badrish's live two-device test failed at sign-in**: the popup closed instantly and showed the
+  generic "Something went wrong signing in". **Root cause: this checkout's `.env.local` still
+  carries the Firebase API key that leaked into ticket 04's history and that Badrish rotated and
+  retired on 2026-09-01.** Google answers every call with it "API key expired", whatever the
+  referrer. Evidence without handling the value: a SHA-256 prefix of the `.env.local` key equals
+  that of the key in ticket 04's git history, and a read-only Identity Toolkit config probe with
+  it returns `API_KEY_INVALID / API key expired`. It surfaced only now because nothing on
+  localhost had touched real Firebase before step 7: step 6 was offline and the emulator tests use
+  a demo project. The deployed site was moved to the new key at rotation (09-01 notebook), so
+  production is not affected. **Not a code fix.** Badrish pastes the current key; steps are in the
+  report.
+- **The generic sign-in failure now shows its Firebase error code** (e.g. `(auth/...)`), only in
+  that residual bucket. The code was only in the console, and a phone has none. Test-first, 3/3
+  mutants killed. UI/UX to review the change (their copy domain).
+- Gates: 964 unit tests in 40 files, lint and typecheck green.
+
+**Open:**
+- Badrish updates `VITE_FIREBASE_API_KEY` in `.env.local`, restarts `npm run dev`, and reruns the
+  two-device test.
+- **Unpushed:** everything above `0532e87`. The range by SHA is in the report; no push without his word.
+
+**Badrish:** "Builder - when I click on "Continue with Google", I get a really fast browser pop up
+which closes automatically instantly and the website displays "Something went wrong signing in.
+Check your connection and try again — nothing is lost." under the "Continue with Google" button."
+
 ## 2026-09-21 (Day 8) — step 7 built: auth, session, first-load states, the engine wired
 **Worked:** builder, mathematician (×2), designer, ui-ux, qa
 

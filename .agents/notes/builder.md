@@ -1,5 +1,31 @@
 # Builder's notebook — NoteMaker
 
+## 2026-09-21 (Day 8, live test) — the credential I rotated around came back through a file I never listed
+
+Sign-in failed on Badrish's machine. The cause was the key he retired on 09-01, still sitting in
+`.env.local`. On 09-01 I confirmed rotation by hashing the **deployed** key. That proved production
+moved. It said nothing about the other copies of the value: the local env file is one too, and it's
+the one `npm run dev` reads. **A rotation is finished when every consumer of the value has moved,
+and the list of consumers includes every `.env*` on every machine, not just the deploy target.** I
+should have written "update `.env.local` too" into the rotation close-out; I didn't, and it cost a
+live-test round.
+
+What made it quick to find:
+- The popup couldn't be reproduced (the Browser pane blocks popups, and the error came back as
+  `auth/popup-blocked`). So I went one layer down: I called the same endpoint the popup's handler
+  page calls, with the same key, read from the file into a variable and never printed. One curl,
+  one clear answer.
+- Hash-comparing against git history again, handling neither value.
+- **I checked my own notebook before blaming a console setting.** The obvious guesses (provider off,
+  localhost not authorised) were both wrong, and I'd have sent Badrish clicking round the console.
+
+The copy decision: the generic bucket now shows the error code. The rule behind it: a catch-all
+message must carry the one fact that distinguishes its cases, or every unknown failure looks
+identical and gets reported as "it doesn't work".
+
+Dead end: reproducing sign-in in the Browser pane. Popups are blocked there, so it always yields
+`auth/popup-blocked`. Don't try it again; probe the endpoints instead.
+
 ## 2026-09-21 (Day 8) — step 7: the question I was sent with was the smallest of three
 
 The prompt sent one question to the Mathematician: a redirect landing inside the save debounce.
