@@ -8,8 +8,14 @@ import { EmptyStates } from './EmptyStates'
 export type SignInError = 'network' | 'blocked' | 'other'
 
 /** Which copy a sign-in rejection gets. The user closing the popup is not a failure: null. */
-export function signInErrorOf(error: unknown): SignInError | null {
+/** The Firebase error code of a rejection, if it carries one. */
+export function errorCodeOf(error: unknown): string | null {
   const code = typeof error === 'object' && error !== null ? (error as { code?: unknown }).code : undefined
+  return typeof code === 'string' ? code : null
+}
+
+export function signInErrorOf(error: unknown): SignInError | null {
+  const code = errorCodeOf(error)
   if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') return null
   if (code === 'auth/network-request-failed') return 'network'
   if (code === 'auth/popup-blocked') return 'blocked'
@@ -19,9 +25,13 @@ export function signInErrorOf(error: unknown): SignInError | null {
 export interface SignInProps {
   onSignIn: () => void
   error: SignInError | null
+  /** Shown only in the residual 'other' bucket: there the code is the one actionable fact, and a
+   *  phone has no console (found in Badrish's live test: an expired API key read as "check your
+   *  connection"). The named cases have copy that already says what to do. */
+  errorCode?: string | null
 }
 
-export function SignIn({ onSignIn, error }: SignInProps) {
+export function SignIn({ onSignIn, error, errorCode = null }: SignInProps) {
   return (
     <main className="signin">
       <h1>NoteMaker</h1>
@@ -34,7 +44,10 @@ export function SignIn({ onSignIn, error }: SignInProps) {
         <p role="alert">Your browser blocked the sign-in popup. Allow popups for this site, then try again.</p>
       )}
       {error === 'other' && (
-        <p role="alert">Something went wrong signing in. Check your connection and try again — nothing is lost.</p>
+        <p role="alert">
+          Something went wrong signing in. Check your connection and try again — nothing is lost.
+          {errorCode !== null && <span className="error-code"> ({errorCode})</span>}
+        </p>
       )}
     </main>
   )

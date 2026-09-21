@@ -310,3 +310,11 @@ button.sync-strip--action {
   padding: 0 1.25rem;
   text-align: center;
 }
+
+/* The Firebase code under the generic sign-in failure: the one actionable fact, kept quiet. */
+.signin .error-code {
+  font-family: ui-monospace, monospace;
+  font-size: 0.85em;
+  opacity: 0.7;
+  overflow-wrap: anywhere;
+}

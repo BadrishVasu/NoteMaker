@@ -28,6 +28,16 @@ describe('SignIn', () => {
     )
   })
 
+  it('the generic bucket also shows the error code, the one actionable fact in it (step 7 live test)', () => {
+    render(<SignIn onSignIn={() => {}} error="other" errorCode="auth/api-key-expired" />)
+    expect(screen.getByRole('alert')).toHaveTextContent('(auth/api-key-expired)')
+  })
+
+  it('no code is shown for the named cases', () => {
+    render(<SignIn onSignIn={() => {}} error="blocked" errorCode="auth/popup-blocked" />)
+    expect(screen.getByRole('alert')).not.toHaveTextContent('auth/')
+  })
+
   it('shows the generic copy for anything else', () => {
     render(<SignIn onSignIn={() => {}} error="other" />)
     expect(screen.getByRole('alert')).toHaveTextContent(

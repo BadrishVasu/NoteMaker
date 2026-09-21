@@ -76,6 +76,17 @@ describe('App — the auth gate', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/Can.t reach Google/)
   })
 
+  it('an unexpected sign-in failure shows its Firebase code under the generic copy', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const auth = fakeAuth()
+    render(<App auth={auth} openSession={openStub} />)
+    auth.emit(null)
+    auth.signInResult = () => Promise.reject(Object.assign(new Error('x'), { code: 'auth/api-key-expired' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Continue with Google' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Something went wrong signing in.*\(auth\/api-key-expired\)/)
+    spy.mockRestore()
+  })
+
   it('signed in: opens that uid’s session and shows the shell with the user’s email', async () => {
     const auth = fakeAuth()
     const openSession = vi.fn(openStub)

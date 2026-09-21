@@ -13,7 +13,7 @@ import { useEffect, useState } from 'react'
 import type { AuthPort, AuthUser } from '../platform/auth'
 import type { Session } from '../session'
 import { AppShell } from './AppShell'
-import { SignIn, signInErrorOf } from './SignIn'
+import { SignIn, errorCodeOf, signInErrorOf } from './SignIn'
 import type { SignInError } from './SignIn'
 import { StorageError } from './StorageError'
 
@@ -26,6 +26,7 @@ export function App({ auth, openSession }: AppProps) {
   /** undefined = Firebase hasn't said yet; null = signed out. */
   const [user, setUser] = useState<AuthUser | null | undefined>(undefined)
   const [signInError, setSignInError] = useState<SignInError | null>(null)
+  const [signInErrorCode, setSignInErrorCode] = useState<string | null>(null)
   // Keyed by uid, so a stale value from the previous account is simply not current — nothing has
   // to be reset from inside an effect.
   const [opened, setOpened] = useState<{ uid: string; session: Session } | null>(null)
@@ -57,15 +58,17 @@ export function App({ auth, openSession }: AppProps) {
 
   function handleSignIn(): void {
     setSignInError(null)
+    setSignInErrorCode(null)
     auth.signIn().catch((err: unknown) => {
       const kind = signInErrorOf(err)
       if (kind !== 'network' && kind !== null) console.error('App: sign-in failed', err)
       setSignInError(kind)
+      setSignInErrorCode(errorCodeOf(err))
     })
   }
 
   if (user === undefined) return null
-  if (user === null) return <SignIn onSignIn={handleSignIn} error={signInError} />
+  if (user === null) return <SignIn onSignIn={handleSignIn} error={signInError} errorCode={signInErrorCode} />
   if (failedUid === user.uid) return <StorageError />
   if (opened === null || opened.uid !== user.uid) return null
 
