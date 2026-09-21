@@ -9,7 +9,7 @@
 // different Note DOES need a fresh `defaultValue`, so the caller (`AppShell`) mounts `Editor`
 // keyed by a `switchToken` that advances on navigation but not on a redirect — see AppShell.
 
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useLayoutEffect, useRef, useState, type FormEvent } from 'react'
 import type { LocalNote, NoteId } from '../domain/note'
 import { exceedsSyncLimit } from '../domain/size'
 import { TitleField } from './TitleField'
@@ -62,7 +62,10 @@ export function Editor({
   // New Note focus: body, never title (05-screens.md §4) — `autoFocusBody` is true only on the
   // mount right after AppShell created this Note, so reopening an existing (possibly also
   // empty) Note never steals focus.
-  useEffect(() => {
+  // A LAYOUT effect, not a passive one: it runs inside the commit that inserts the textarea, so
+  // there is no frame where the body is on screen but focus is still on "New note" and a fast
+  // first keystroke is lost. The passive version made AppShell's focus test flaky (~1 in 6).
+  useLayoutEffect(() => {
     if (autoFocusBody && !readOnly) bodyRef.current?.focus()
     // Mount-only: this must not refire on a redirect or a content update for this same Note.
     // eslint-disable-next-line react-hooks/exhaustive-deps

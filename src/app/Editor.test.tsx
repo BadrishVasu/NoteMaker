@@ -19,6 +19,43 @@ function baseProps(overrides: Partial<React.ComponentProps<typeof Editor>> = {})
   }
 }
 
+describe('Editor — new-Note focus has no unfocused frame (builder, flaky-test root cause)', () => {
+  // The AppShell focus test failed ~1 run in 6: the body was focused in a passive `useEffect`,
+  // which React runs in a LATER task than the commit that puts the textarea on screen. In that
+  // gap the textarea exists and focus is still on the "New note" button, so a fast first
+  // keystroke goes nowhere. A MutationObserver callback is a microtask queued by the commit's DOM
+  // insertion: it runs after the commit (and its layout effects) and before any later task, so it
+  // observes exactly that gap, deterministically. Rendered outside `act`, since act would flush
+  // the passive effect and hide the gap.
+  it('the body already has focus in the same task that inserts it', async () => {
+    const { createRoot } = await import('react-dom/client')
+    const g = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+    const prevAct = g.IS_REACT_ACT_ENVIRONMENT
+    g.IS_REACT_ACT_ENVIRONMENT = false
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const root = createRoot(host)
+    try {
+      const focusedAtInsert = await new Promise<string | null>((resolve) => {
+        const obs = new MutationObserver(() => {
+          const body = host.querySelector('textarea')
+          if (body === null) return
+          obs.disconnect()
+          resolve(document.activeElement === body ? 'body' : (document.activeElement?.tagName ?? null))
+        })
+        obs.observe(host, { childList: true, subtree: true })
+        root.render(<Editor {...baseProps({ note: makeRow({ title: 'n', body: '' }), autoFocusBody: true })} />)
+      })
+      expect(focusedAtInsert).toBe('body')
+    } finally {
+      root.unmount()
+      host.remove()
+      if (prevAct === undefined) delete g.IS_REACT_ACT_ENVIRONMENT
+      else g.IS_REACT_ACT_ENVIRONMENT = prevAct
+    }
+  })
+})
+
 describe('Editor', () => {
   beforeEach(() => resetRows())
 

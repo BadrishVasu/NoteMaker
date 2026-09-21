@@ -303,3 +303,10 @@ button.sync-strip--action {
   text-align: center;
   padding: 0 1.25rem;
 }
+
+.boot-failed {
+  max-width: 28rem;
+  margin: 4rem auto;
+  padding: 0 1.25rem;
+  text-align: center;
+}

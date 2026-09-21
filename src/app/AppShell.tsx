@@ -63,6 +63,7 @@ export function AppShell({ corpus: injected }: AppShellProps = {}) {
   const [banner, setBanner] = useState<ConflictBanner | null>(null)
   const [initialSyncCompletedAt, setInitialSyncCompletedAt] = useState<number | null>(null)
   const [persistDenied, setPersistDenied] = useState(false)
+  const [bootFailed, setBootFailed] = useState(false)
 
   // Boot: open the store, seed it (dev-only, opt-in — see devSeed.ts), load the mirror into the
   // corpus, and read the meta keys this screen renders from.
@@ -99,7 +100,13 @@ export function AppShell({ corpus: injected }: AppShellProps = {}) {
       }
       saveDepsRef.current = deps
       saveQueueRef.current = createSaveQueue(deps)
-    })()
+    })().catch((err: unknown) => {
+      // The mirror could not be opened or read (IndexedDB disabled or blocked). Without this the
+      // rejection was unhandled and the shell showed "Getting your notes…" forever. Nothing was
+      // written, so nothing is lost; say so, terminally. (builder, step 6 — Frontend's review note)
+      console.error('AppShell: opening the local note storage failed', err)
+      if (!cancelled) setBootFailed(true)
+    })
     return () => {
       cancelled = true
       // Closes the connection this effect opened so a test (or a real navigation away from the
@@ -181,9 +188,16 @@ export function AppShell({ corpus: injected }: AppShellProps = {}) {
     if (deps === null) return
     void (async () => {
       const id = asNoteId(crypto.randomUUID())
-      const row = await commitCreate(deps, id, { title: '', titleIsCustom: false, body: '' })
-      setView('notes')
-      navigateTo(row.id, { justCreated: true })
+      try {
+        const row = await commitCreate(deps, id, { title: '', titleIsCustom: false, body: '' })
+        setView('notes')
+        navigateTo(row.id, { justCreated: true })
+      } catch (err) {
+        // Same policy as the save queue's writeNow: a failed local write is loud in the console
+        // and never an unhandled rejection. Nothing was written, nothing is lost (the Note had no
+        // content yet), and the next tap retries. QA found this at step 6.
+        console.error('AppShell: creating a Note in the local mirror failed', err)
+      }
     })()
   }
 
@@ -229,6 +243,15 @@ export function AppShell({ corpus: injected }: AppShellProps = {}) {
   // No sync/engine.ts exists at step 6 (build brief's seam) — a harmless, honest no-op today.
   function handleSyncNow(): void {
     /* step 7 seam */
+  }
+
+  if (bootFailed) {
+    // Copy by builder, pending UI/UX review — 05-screens.md has no state for this.
+    return (
+      <div className="boot-failed" role="alert">
+        Can't open this device's note storage. Nothing has been changed — try reloading.
+      </div>
+    )
   }
 
   return (

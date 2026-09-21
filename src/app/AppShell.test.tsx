@@ -173,4 +173,164 @@ describe('AppShell', () => {
     await userEvent.type(screen.getByRole('searchbox', { name: 'Search notes' }), 'zzz-nomatch')
     await waitFor(() => expect(screen.getByText('No notes match "zzz-nomatch"')).toBeInTheDocument())
   })
+
+  // QA, step 6 verification. The debounce is keyed per-Note in `saveNote.ts`'s queue, not tied
+  // to Editor's mount lifecycle — so switching Notes before the 600ms timer fires must not lose
+  // the abandoned Note's keystrokes even though its Editor instance unmounts underneath them.
+  it('switching to a different Note mid-debounce still saves the Note left behind', async () => {
+    render(<AppShell />)
+    await waitUntilReady()
+    await userEvent.click(screen.getAllByRole('button', { name: 'New note' })[0]!)
+    await waitFor(() => expect(screen.getByLabelText('Note body')).toBeInTheDocument())
+    await userEvent.type(screen.getByLabelText('Note body'), 'Left behind mid-debounce')
+
+    // Switch away before 600ms elapses — no explicit wait for the first Note's save.
+    await userEvent.click(screen.getAllByRole('button', { name: 'New note' })[0]!)
+    await waitFor(() => expect(screen.getByLabelText('Note body')).toHaveValue(''))
+
+    const store = await openIdbNoteStore('local')
+    try {
+      await waitFor(
+        async () => {
+          const rows = await store.getAll()
+          expect(rows.some((r) => r.body === 'Left behind mid-debounce')).toBe(true)
+        },
+        { timeout: 2000 },
+      )
+    } finally {
+      store.close()
+    }
+  })
+
+  it('deleting immediately after typing keeps the just-typed text on the trashed row', async () => {
+    render(<AppShell />)
+    await waitUntilReady()
+    await userEvent.click(screen.getAllByRole('button', { name: 'New note' })[0]!)
+    await waitFor(() => expect(screen.getByLabelText('Note body')).toBeInTheDocument())
+    await userEvent.type(screen.getByLabelText('Note body'), 'About to be deleted')
+    // No wait for the debounce: delete fires while the edit is still only pending.
+    await userEvent.click(screen.getByRole('button', { name: 'Move to Trash' }))
+    await waitFor(() => expect(screen.getByLabelText('Note body')).toBeDisabled())
+    expect(screen.getByLabelText('Note body')).toHaveValue('About to be deleted')
+
+    const store = await openIdbNoteStore('local')
+    try {
+      await waitFor(async () => {
+        const rows = await store.getAll()
+        const row = rows.find((r) => r.body === 'About to be deleted')
+        expect(row).toBeDefined()
+        expect(row?.deletedAt).not.toBeNull()
+      })
+    } finally {
+      store.close()
+    }
+  })
+
+  it('restoring, then typing immediately (mid-debounce), saves the post-restore edit', async () => {
+    render(<AppShell />)
+    await waitUntilReady()
+    await userEvent.click(screen.getAllByRole('button', { name: 'New note' })[0]!)
+    await waitFor(() => expect(screen.getByLabelText('Note body')).toBeInTheDocument())
+    await userEvent.type(screen.getByLabelText('Note body'), 'Will be restored')
+    await waitFor(
+      () => expect(screen.getByRole('button', { name: /Will be restored/ })).toBeInTheDocument(),
+      { timeout: 2000 },
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Move to Trash' }))
+    await waitFor(() => expect(screen.getByLabelText('Note body')).toBeDisabled())
+
+    await userEvent.click(screen.getByRole('button', { name: 'Restore' }))
+    await waitFor(() => expect(screen.getByLabelText('Note body')).not.toBeDisabled())
+    // Restore itself flushes synchronously (handleRestore calls flush(id)); the real risk this
+    // test targets is the very next keystroke, typed before that restore's own debounce cycle
+    // settles, still landing correctly rather than reverting deletedAt or the body.
+    await userEvent.type(screen.getByLabelText('Note body'), ' plus more')
+
+    const store = await openIdbNoteStore('local')
+    try {
+      await waitFor(
+        async () => {
+          const rows = await store.getAll()
+          const row = rows.find((r) => r.body === 'Will be restored plus more')
+          expect(row).toBeDefined()
+          expect(row?.deletedAt).toBeNull()
+        },
+        { timeout: 2000 },
+      )
+    } finally {
+      store.close()
+    }
+  })
+
+  // 05-screens.md §5: the number shown in the Custom-emptied hint must be the number that
+  // actually lands on save — never a guess independent of `nextUntitledN`.
+  it('the Custom-emptied hint number matches the Default title the note actually saves as', async () => {
+    render(<AppShell />)
+    await waitUntilReady()
+    await userEvent.click(screen.getAllByRole('button', { name: 'New note' })[0]!)
+    await waitFor(() => expect(screen.getByLabelText('Note body')).toBeInTheDocument())
+
+    await userEvent.type(screen.getByLabelText('Title'), 'Temp')
+    await userEvent.clear(screen.getByLabelText('Title'))
+
+    const hint = await screen.findByText(/It.s listed as/)
+    const match = /Untitled Note (\d+)/.exec(hint.textContent ?? '')
+    expect(match).not.toBeNull()
+    const predictedN = match![1]
+
+    await waitFor(
+      () =>
+        expect(screen.getByRole('button', { name: `Untitled Note ${predictedN}` })).toBeInTheDocument(),
+      { timeout: 2000 },
+    )
+  })
+
+  // Lifecycle flush end-to-end (05-screens.md §4 + platform/lifecycle.ts): a window `blur` must
+  // write a pending edit well before the 600ms debounce would have fired on its own.
+  it('a window blur flushes a pending edit before the debounce timer fires', async () => {
+    render(<AppShell />)
+    await waitUntilReady()
+    await userEvent.click(screen.getAllByRole('button', { name: 'New note' })[0]!)
+    await waitFor(() => expect(screen.getByLabelText('Note body')).toBeInTheDocument())
+    await userEvent.type(screen.getByLabelText('Note body'), 'Blur me')
+    window.dispatchEvent(new Event('blur'))
+
+    const store = await openIdbNoteStore('local')
+    try {
+      await waitFor(
+        async () => {
+          const rows = await store.getAll()
+          expect(rows.some((r) => r.body === 'Blur me')).toBe(true)
+        },
+        { timeout: 400 },
+      )
+    } finally {
+      store.close()
+    }
+  })
+
+  // Same lifecycle wiring, the `visibilitychange -> hidden` signal (Android backgrounding).
+  it('visibilitychange to hidden flushes a pending edit before the debounce timer fires', async () => {
+    render(<AppShell />)
+    await waitUntilReady()
+    await userEvent.click(screen.getAllByRole('button', { name: 'New note' })[0]!)
+    await waitFor(() => expect(screen.getByLabelText('Note body')).toBeInTheDocument())
+    await userEvent.type(screen.getByLabelText('Note body'), 'Hide me')
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true })
+    document.dispatchEvent(new Event('visibilitychange'))
+
+    const store = await openIdbNoteStore('local')
+    try {
+      await waitFor(
+        async () => {
+          const rows = await store.getAll()
+          expect(rows.some((r) => r.body === 'Hide me')).toBe(true)
+        },
+        { timeout: 400 },
+      )
+    } finally {
+      store.close()
+      Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
+    }
+  })
 })
