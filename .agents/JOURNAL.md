@@ -2,6 +2,31 @@
 
 Newest entry first. Append only.
 
+## 2026-09-21 (Day 7, closed) — Badrish tested step 6; Day 8 prompt written
+**Worked:** builder
+
+**Moved:**
+- **Badrish tested step 6 locally himself** after the green light, and it passed. That's recorded as
+  a checked State item on `features/editor-and-shell.md`. `Status:` stays `verified`, not `shipped`:
+  nothing is pushed, so nothing is deployed.
+- **`.agents/prompts/day-8.md` written** for step 7: auth, `persist()`, the four first-load states
+  driven by the engine, wiring the engine into the injected corpus, two devices end to end, and
+  measuring read cost rather than inheriting it. It puts the Mathematician question (a conflict
+  redirect landing mid-save) **ahead** of any engine wiring.
+- One correction to what was carried forward: **Frontend's notebook entry is done**. It was
+  written 2026-09-21 and committed in `598d89d`. The Day 8 prompt says so, so nobody chases it.
+
+**Open:**
+- **Unpushed: everything above `0532e87`.** The exact range by SHA is in the report. Badrish has not
+  authorised a push; pushing `main` deploys step 6 to `note-maker-f41.pages.dev`.
+- Everything in `day-8.md` §4: UI/UX review of the storage-failure copy, the Designer told about
+  `platform/prefs.ts` and the injected corpus, the Mathematician on redirect-mid-save, the one
+  leaked `.live.*` marker, and the undeletable Day 6 worktree folder.
+
+**Badrish:** "Testing is done. Great job team!" — and: "Builder - you may note down that I've tested
+the app myself as well. Then you may wrap the session up, prepare the prompt for Day 8 and do the
+commits"
+
 ## 2026-09-21 (Day 7, green-light round) — step 6 QA-verified; flaky test root-caused
 **Worked:** builder, qa, frontend (notebook only)
 

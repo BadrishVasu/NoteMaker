@@ -37,6 +37,9 @@ and how the Outbox is surfaced. Everything a Note is read and written through.
 - [x] Boot failure (IndexedDB won't open) now shows a terminal message instead of an infinite
       "Getting your notes…". Added **after** QA's run; covered by its own test, not QA-verified.
       Its copy is builder's and **awaits UI/UX review** — 05-screens.md has no state for it.
+- [x] **Badrish tested step 6 locally himself, 2026-09-21** (`npm run dev`, `/?seed`), after
+      builder's green light: "Testing is done. Great job team!" Status stays `verified`, not
+      `shipped` — nothing is pushed, so nothing is deployed.
 - [x] Totals after the QA round: **869 unit tests in 34 files**, 72 emulator tests in 4 files;
       lint, typecheck, build green; 7 consecutive full-suite runs green on the final code.
 - [ ] Real PWA icons — still placeholder art; UI/UX deferred it out of the step-6 spec.

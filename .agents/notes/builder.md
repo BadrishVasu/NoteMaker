@@ -1,5 +1,25 @@
 # Builder's notebook — NoteMaker
 
+## 2026-09-21 (Day 7, close) — the green light held, and a carried item was already done
+
+Badrish tested step 6 himself and it passed. What made the green light worth giving was the
+order I did things in on the last round: the flaky test was root-caused and pinned
+deterministically *before* I said go, not waved through on a streak of green runs. At 1 failure in
+6, seven green runs happen by luck about 28% of the time.
+
+The close-out brief listed "Frontend's missing notebook entry" as open. It wasn't — I'd had
+Frontend write it in the previous round and committed it in `598d89d`. Copying the list into the
+Day 8 prompt unchanged would have sent next session's Builder after finished work, which is the
+Day 6 miss again (reporting finished work as open), arriving from the other side. **Every item
+carried into a prompt is re-checked against the tree, not copied from the list that named it.**
+
+Status stays `verified`, not `shipped`: Badrish testing it locally is not a deploy. LOGBOOK.md's
+ladder has one rung per real event, and a deploy has not happened.
+
+The Mathematician question goes in the Day 8 prompt as its own section, *ahead* of the work. It
+was a footnote on the feature file. A footnote is where a question waits until the engine is
+already wired on top of the answer it never got.
+
 ## 2026-09-21 (Day 7, green-light round) — the flake was a product bug, and my suspect was wrong
 
 I suspected the flake was the lineage walks I had just given a time budget, because that was the
