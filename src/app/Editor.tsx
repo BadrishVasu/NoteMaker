@@ -38,6 +38,9 @@ export interface EditorProps {
   /** True only on the render right after this Note was created (AppShell's `pendingFocusId`).
    *  Distinguishes "brand new Note" from "existing Note that happens to have an empty body". */
   autoFocusBody: boolean
+  /** Set on a re-seed remount (a remote edit to this idle, open Note): keep focus in the field
+   *  that had it, caret at the start (05-screens, Editor, UI/UX step 7). Never moves focus in. */
+  refocus?: 'body' | 'title' | null
 }
 
 export function Editor({
@@ -51,12 +54,14 @@ export function Editor({
   banner,
   onDismissBanner,
   autoFocusBody,
+  refocus = null,
 }: EditorProps) {
   const [title, setTitle] = useState(note.title)
   const [titleIsCustom, setTitleIsCustom] = useState(note.titleIsCustom)
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewText, setPreviewText] = useState('')
   const bodyRef = useRef<HTMLTextAreaElement>(null)
+  const rootRef = useRef<HTMLDivElement>(null)
   const readOnly = note.deletedAt !== null
 
   // New Note focus: body, never title (05-screens.md §4) — `autoFocusBody` is true only on the
@@ -67,6 +72,8 @@ export function Editor({
   // first keystroke is lost. The passive version made AppShell's focus test flaky (~1 in 6).
   useLayoutEffect(() => {
     if (autoFocusBody && !readOnly) bodyRef.current?.focus()
+    else if (refocus === 'body') bodyRef.current?.focus()
+    else if (refocus === 'title') rootRef.current?.querySelector<HTMLInputElement>('input[aria-label="Title"]')?.focus()
     // Mount-only: this must not refire on a redirect or a content update for this same Note.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -92,7 +99,7 @@ export function Editor({
   const tooLarge = exceedsSyncLimit(note)
 
   return (
-    <div className="editor">
+    <div className="editor" ref={rootRef}>
       <div className="editor-toolbar">
         {onBack && (
           <button type="button" aria-label="Back to notes" onClick={onBack}>

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { SignIn } from './SignIn'
+import { SignIn, signInErrorOf } from './SignIn'
 
 describe('SignIn', () => {
   it('renders the primary Google sign-in action and calls onSignIn', async () => {
@@ -16,8 +16,36 @@ describe('SignIn', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
-  it('shows the no-network failure copy under the button when there is an error', () => {
-    render(<SignIn onSignIn={() => {}} error="failed" />)
+  it('shows the no-network copy for a network failure', () => {
+    render(<SignIn onSignIn={() => {}} error="network" />)
     expect(screen.getByRole('alert')).toHaveTextContent(/Can.t reach Google to sign in/)
+  })
+
+  it('shows the blocked-popup copy when the browser blocked the popup (05-screens, step 7)', () => {
+    render(<SignIn onSignIn={() => {}} error="blocked" />)
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Your browser blocked the sign-in popup. Allow popups for this site, then try again.',
+    )
+  })
+
+  it('shows the generic copy for anything else', () => {
+    render(<SignIn onSignIn={() => {}} error="other" />)
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Something went wrong signing in. Check your connection and try again — nothing is lost.',
+    )
+  })
+})
+
+describe('signInErrorOf — which copy a signInWithPopup rejection gets', () => {
+  const err = (code: string) => Object.assign(new Error(code), { code })
+  it('the user closing the popup is not an error', () => {
+    expect(signInErrorOf(err('auth/popup-closed-by-user'))).toBeNull()
+    expect(signInErrorOf(err('auth/cancelled-popup-request'))).toBeNull()
+  })
+  it('maps network, blocked, and everything else', () => {
+    expect(signInErrorOf(err('auth/network-request-failed'))).toBe('network')
+    expect(signInErrorOf(err('auth/popup-blocked'))).toBe('blocked')
+    expect(signInErrorOf(err('auth/internal-error'))).toBe('other')
+    expect(signInErrorOf('not even an error')).toBe('other')
   })
 })

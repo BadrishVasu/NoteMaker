@@ -159,3 +159,14 @@ export function commitPush(flight: Flight, action: PushAction, local: LocalRowsN
     }
   }
 }
+
+/**
+ * Where the open editor follows this device's text after a commit, or null (02, amendment
+ * 2026-09-21, rule 4). Exactly when `commitPush` put a row at the copy id — a `conflictCopy`
+ * whose slot was free, typed or not. Every other outcome leaves the editor where it is; a missed
+ * redirect degrades to the save path's concurrent-edit branch (a spurious copy, never a loss).
+ */
+export function redirectTarget(action: PushAction, writes: readonly RowWrite[]): NoteId | null {
+  if (action.kind !== 'conflictCopy') return null
+  return writes.some((w) => w.op === 'put' && w.row.id === action.copyId) ? action.copyId : null
+}

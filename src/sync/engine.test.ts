@@ -1,15 +1,15 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { asDeviceId, asNoteId, asRev, forkPointOf } from '../domain/note'
-import type { LocalNote, NoteDoc, NoteId } from '../domain/note'
+import type { LocalNote, NoteDoc, NoteId, RowWrite } from '../domain/note'
 import { newLocalNote, recordEdit } from '../domain/edit'
 import { deleteMemoryNoteStore, openMemoryNoteStore } from '../store/memoryNoteStore'
 import type { NoteStore } from '../store/noteStore'
 import { ManualClock } from '../test/manualClock'
 import { FakeServer } from './fakeGateway'
 import { PermanentPushError } from './remoteGateway'
-import { BACKOFF_MAX_MS, BACKOFF_MIN_MS, PUSH_TIMEOUT_MS, createSyncEngine } from './engine'
-import type { SyncEngine, SyncProblem } from './engine'
+import { BACKOFF_MAX_MS, BACKOFF_MIN_MS, PUSH_TIMEOUT_MS, createExclusive, createSyncEngine } from './engine'
+import type { SnapshotState, SyncEngine, SyncProblem } from './engine'
 
 // Ticket 09's bulk: two devices are two engine instances, each with its own store, sharing one
 // FakeServer. Interleavings are driven by the server's hooks, time by a ManualClock.
@@ -28,6 +28,12 @@ interface Device {
   store: NoteStore
   engine: SyncEngine
   problems: SyncProblem[]
+  /** Every onWrites delivery, in order. */
+  written: RowWrite[][]
+  /** Every onSnapshot delivery, in order. */
+  snapshots: SnapshotState[]
+  /** onWrites and onRedirect deliveries in order, each tagged with whether the write lock was held. */
+  log: string[]
   autoSync: boolean
   create(id: NoteId, body: string): Promise<void>
   edit(id: NoteId, body: string): Promise<void>
@@ -45,6 +51,9 @@ async function device(name: string, opts: { start?: boolean } = {}): Promise<Dev
     name,
     store,
     problems: [],
+    written: [],
+    snapshots: [],
+    log: [],
     autoSync: true,
     engine: undefined as unknown as SyncEngine,
     async create(id, body) {
@@ -69,13 +78,31 @@ async function device(name: string, opts: { start?: boolean } = {}): Promise<Dev
     },
     row: (id) => store.get(id),
   }
+  const lock = createExclusive()
+  let depth = 0
+  const held = () => (depth > 0 ? 'locked' : 'UNLOCKED')
   dev.engine = createSyncEngine({
+    exclusive: (fn) =>
+      lock(async () => {
+        depth++
+        try {
+          return await fn()
+        } finally {
+          depth--
+        }
+      }),
+    onRedirect: ({ from, to }) => dev.log.push(`redirect ${from}>${to} ${held()}`),
     uid: UID,
     store,
     gateway: server.gateway(),
     clock,
     autoSync: () => dev.autoSync,
     onProblem: (p) => dev.problems.push(p),
+    onWrites: (w) => {
+      dev.written.push(w)
+      dev.log.push(`writes ${w.map((x) => (x.op === 'put' ? x.row.id : `-${x.id}`)).join(',')} ${held()}`)
+    },
+    onSnapshot: (s) => dev.snapshots.push(s),
   })
   opened.push(dev)
   if (opts.start !== false) {
@@ -763,5 +790,140 @@ describe('seeded random walks — two engines, one server, interleaved inside tr
       }
     }
     expect(devs.flatMap((d) => d.problems).filter((p) => p.kind !== 'push-failed' && p.kind !== 'push-timeout')).toEqual([])
+  })
+})
+
+describe('what the engine tells the app (step 7: the corpus and the first-load states)', () => {
+  it('hands over the rows a snapshot apply committed, after the commit', async () => {
+    server.put(UID, N, serverDoc('r0', 'zero'))
+    const a = await device('devA')
+    const puts = a.written.flat().filter((w) => w.op === 'put')
+    expect(puts).toEqual([{ op: 'put', row: cleanRow(N, serverDoc('r0', 'zero')) }])
+  })
+
+  it('hands over the absent-row deletions a complete batch derived', async () => {
+    const a = await device('devA', { start: false })
+    await a.store.put(cleanRow(asNoteId('gone'), serverDoc('g0', 'purged elsewhere')))
+    await a.engine.start()
+    await settle()
+    expect(a.written.flat()).toEqual([{ op: 'delete', id: asNoteId('gone') }])
+  })
+
+  it('hands over the bookkeeping a push commit wrote', async () => {
+    const a = await device('devA')
+    await a.create(N, 'hello')
+    await settle()
+    const row = await a.row(N)
+    expect(row?.pendingRev).toBeNull()
+    expect(a.written.flat()).toContainEqual({ op: 'put', row })
+  })
+
+  it('hands over nothing from a snapshot apply that rolled back', async () => {
+    const a = await device('devA', { start: false })
+    await a.store.put(cleanRow(N, serverDoc('r0', 'local disagrees')))
+    server.put(UID, N, serverDoc('r0', 'zero'))
+    await a.engine.start()
+    await settle()
+    expect(a.problems.map((p) => p.kind)).toEqual(['snapshot-failed'])
+    expect(a.written).toEqual([])
+  })
+
+  it('reports each applied batch: from-cache with no stamp while offline, then the stamp on the complete batch', async () => {
+    server.hold()
+    const a = await device('devA', { start: false })
+    await a.engine.start()
+    server.emit(UID, { fromCache: true, complete: false, changes: [] })
+    await settle()
+    expect(a.snapshots).toEqual([{ fromCache: true, initialSyncCompletedAt: null }])
+    clock.advance(5)
+    server.emit(UID, { fromCache: false, complete: true, changes: [] })
+    await settle()
+    expect(a.snapshots.at(-1)).toEqual({ fromCache: false, initialSyncCompletedAt: clock.now() })
+  })
+
+  it('reports the persisted stamp, not a fresh one, on a returning device', async () => {
+    const a = await device('devA', { start: false })
+    await a.store.setMeta('initialSyncCompletedAt', 42)
+    await a.engine.start()
+    await settle()
+    expect(a.snapshots).toEqual([{ fromCache: false, initialSyncCompletedAt: 42 }])
+  })
+
+  it('a throwing app callback is not a failed push or a failed apply', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    server.put(UID, N, serverDoc('r0', 'zero'))
+    const a = await device('devA', { start: false })
+    const engine = createSyncEngine({
+      uid: UID,
+      store: a.store,
+      gateway: server.gateway(),
+      clock,
+      onProblem: (p) => a.problems.push(p),
+      onWrites: () => {
+        throw new Error('corpus exploded')
+      },
+    })
+    await engine.start()
+    await settle()
+    await a.create(asNoteId('M'), 'hi')
+    engine.wake()
+    await settle()
+    expect(a.problems).toEqual([])
+    expect((await a.row(asNoteId('M')))?.pendingRev).toBeNull()
+    expect(server.subscriptionsOpened).toBe(1)
+    engine.stop()
+    spy.mockRestore()
+  })
+
+  it('stop() resolves only after an in-flight push has settled and committed locally (sign-out closes the store next)', async () => {
+    const [a] = await syncedPair()
+    const held = gate()
+    server.beforeWrite = () => held.promise
+    await a.edit(N, 'typed just before sign-out')
+    await settle()
+    let stopped = false
+    const stopping = a.engine.stop().then(() => (stopped = true))
+    await settle()
+    expect(stopped).toBe(false)
+    server.beforeWrite = null
+    held.open()
+    await stopping
+    expect((await a.row(N))?.pendingRev).toBeNull()
+  })
+
+  it('stop() gives up waiting on a hung push after the push timeout', async () => {
+    const [a] = await syncedPair()
+    server.beforeWrite = () => new Promise<void>(() => undefined) // never settles
+    await a.edit(N, 'typed')
+    await settle()
+    let stopped = false
+    void a.engine.stop().then(() => (stopped = true))
+    clock.advance(PUSH_TIMEOUT_MS - 1)
+    await settle()
+    expect(stopped).toBe(false)
+    clock.advance(1)
+    await settle()
+    expect(stopped).toBe(true)
+    expect((await a.row(N))?.pendingRev).not.toBeNull() // still in the Outbox for next session
+  })
+
+  it('a conflict copy redirects the losing device exactly once, after its rows, inside the write lock', async () => {
+    const [a, b] = await syncedPair()
+    server.failPushesWith = new Error('unavailable')
+    await a.edit(N, 'A wrote this')
+    await b.edit(N, 'B wrote this')
+    await settle()
+    server.failPushesWith = null
+    a.engine.syncNow() // B pushes on A's snapshot and loses
+    await settle()
+    b.engine.syncNow()
+    await settle()
+    const copy = server.ids(UID).find((id) => id !== N)!
+    const redirects = b.log.filter((e) => e.startsWith('redirect'))
+    expect(redirects).toEqual([`redirect ${N}>${copy} locked`])
+    const at = b.log.indexOf(redirects[0]!)
+    expect(b.log.slice(0, at).some((e) => e === `writes ${N},${copy} locked`)).toBe(true)
+    expect(a.log.filter((e) => e.startsWith('redirect'))).toEqual([]) // the winner stays put
+    expect(b.log.every((e) => e.endsWith(' locked'))).toBe(true) // snapshot applies too
   })
 })

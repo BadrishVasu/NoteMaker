@@ -21,7 +21,7 @@ import { applySnapshot } from '../domain/applySnapshot'
 import { ConflictCopyIdTooLongError } from '../domain/conflictCopy'
 import type { DeviceId, LocalNote, NoteDoc, NoteId, Rev, RowWrite } from '../domain/note'
 import { asDeviceId } from '../domain/note'
-import { beginPush, commitPush, decide } from '../domain/reconcile'
+import { beginPush, commitPush, decide, redirectTarget } from '../domain/reconcile'
 import type { NoteStore, NoteStoreTx } from '../store/noteStore'
 import { PermanentPushError } from './remoteGateway'
 import type { DocChange, RemoteGateway, SnapshotBatch, Unsubscribe } from './remoteGateway'
@@ -45,6 +45,24 @@ export type SyncProblem =
   /** The Outbox could not be read from the store. Retried on backoff. */
   | { kind: 'drain-failed'; error: unknown }
 
+/** A mutual-exclusion section: runs `fn` after every earlier section has settled. */
+export type Exclusive = <T>(fn: () => Promise<T>) => Promise<T>
+
+/**
+ * The one-writer-at-a-time lock of 02's amendment 2026-09-21, rule 2. Every mirror write —
+ * snapshot apply, push commit, edit commit, create — runs inside one section of the SAME lock,
+ * and publishes its committed writes to the corpus before releasing it. So the session builds
+ * one and hands it to both the engine and the save path.
+ */
+export function createExclusive(): Exclusive {
+  let tail: Promise<unknown> = Promise.resolve()
+  return <T>(fn: () => Promise<T>): Promise<T> => {
+    const run = tail.then(fn, fn)
+    tail = run.catch(() => undefined)
+    return run
+  }
+}
+
 export interface SyncEngineDeps {
   uid: string
   store: NoteStore
@@ -55,12 +73,35 @@ export interface SyncEngineDeps {
   /** Source for a first-run `deviceId`; 8 characters are kept. */
   randomId?: () => string
   onProblem?: (problem: SyncProblem) => void
+  /** Every row write the engine committed to the store — snapshot applies and push commits —
+   *  delivered after the commit, never for a transaction that rolled back. The app feeds these
+   *  into the corpus the UI reads, so the corpus never shows a row the mirror doesn't hold. */
+  onWrites?: (writes: RowWrite[]) => void
+  /** After each applied snapshot batch. `fromCache` before any stamp is the "waiting for a
+   *  connection" first-load state; snapshot delivery is the connectivity oracle, never
+   *  `navigator.onLine`. */
+  onSnapshot?: (state: SnapshotState) => void
+  /** This device's text moved to a Conflict copy (`redirectTarget`): the open editor follows.
+   *  Delivered after that commit's `onWrites`, inside the same exclusive section. */
+  onRedirect?: (redirect: { from: NoteId; to: NoteId }) => void
+  /** The shared write lock. Omitted in engine-only tests, which get a private one. */
+  exclusive?: Exclusive
+}
+
+export interface SnapshotState {
+  fromCache: boolean
+  /** The persisted stamp after this batch: null until a complete server-backed batch. */
+  initialSyncCompletedAt: number | null
 }
 
 export interface SyncEngine {
   /** Reads (or mints) the deviceId, then subscribes. */
   start(): Promise<void>
-  stop(): void
+  /** Stops the listener and every trigger, then resolves once in-flight pushes have settled
+   *  and committed locally — or after PUSH_TIMEOUT_MS, so a hung transaction cannot hang
+   *  sign-out. A push abandoned that way stays dirty in the mirror; its next attempt takes
+   *  02's `landed` branch if it did reach the server. */
+  stop(): Promise<void>
   /** A local edit, or `visibilitychange → visible`. */
   wake(): void
   /** The `Sync Now` button: resets backoff and drains, whatever `Auto sync` says. */
@@ -73,6 +114,15 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
   const { uid, gateway, clock } = deps
   const autoSync = deps.autoSync ?? (() => true)
   const report = (p: SyncProblem) => deps.onProblem?.(p)
+  /** The app's callbacks run after a commit. One that throws must not be mistaken for a failed
+   *  push or a failed snapshot apply — the store already holds the result. */
+  const tell = <T>(fn: ((arg: T) => void) | undefined, arg: T): void => {
+    try {
+      fn?.(arg)
+    } catch (error) {
+      console.error('sync engine: an app callback threw after a committed write', error)
+    }
+  }
 
   let running = false
   let deviceId: DeviceId | null = null
@@ -94,11 +144,14 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
   let backoffTimer: unknown = null
 
   /** Snapshot applies and push commits run one at a time: a commit must never read
-   *  `lastServerState` between a snapshot's row writes and its map update. */
-  let exclusiveTail: Promise<unknown> = Promise.resolve()
-  function exclusive<T>(fn: () => Promise<T>): Promise<T> {
-    const run = exclusiveTail.then(fn, fn)
-    exclusiveTail = run.catch(() => undefined)
+   *  `lastServerState` between a snapshot's row writes and its map update. The same lock
+   *  serialises them against the save path's edit commits (02 amendment 2026-09-21, rule 2). */
+  const exclusive: Exclusive = deps.exclusive ?? createExclusive()
+  /** Resolves once every section this engine queued so far has settled (for `stop`). */
+  let lastSection: Promise<unknown> = Promise.resolve()
+  const section = <T>(fn: () => Promise<T>): Promise<T> => {
+    const run = exclusive(fn)
+    lastSection = run.catch(() => undefined)
     return run
   }
 
@@ -149,7 +202,7 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
   }
 
   function onBatch(batch: SnapshotBatch, from: number): void {
-    void exclusive(async () => {
+    void section(async () => {
       if (from !== generation) return false
       await applyBatch(batch)
       return true
@@ -169,17 +222,25 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
 
   async function applyBatch(batch: SnapshotBatch): Promise<void> {
     let changes: DocChange[] = batch.changes
-    await deps.store.runInTransaction(async (tx) => {
+    const written: RowWrite[] = []
+    const stamp = await deps.store.runInTransaction(async (tx) => {
       if (batch.complete) {
         // Everything known but absent from the whole collection is gone.
         const present = new Set(changes.map((c) => c.id))
         const known = new Set<NoteId>([...(await tx.getAll()).map((r) => r.id), ...lastServerState.keys()])
         changes = [...changes, ...[...known].filter((id) => !present.has(id)).map((id) => ({ id, doc: null }))]
       }
-      for (const { id, doc } of changes) await applyWrites(tx, applySnapshot(await tx.get(id), id, doc))
-      if (batch.complete && (await tx.getMeta('initialSyncCompletedAt')) == null) {
-        await tx.setMeta('initialSyncCompletedAt', clock.now())
+      for (const { id, doc } of changes) {
+        const writes = applySnapshot(await tx.get(id), id, doc)
+        await applyWrites(tx, writes)
+        written.push(...writes)
       }
+      let stamped = (await tx.getMeta('initialSyncCompletedAt')) ?? null
+      if (batch.complete && stamped === null) {
+        stamped = clock.now()
+        await tx.setMeta('initialSyncCompletedAt', stamped)
+      }
+      return stamped
     })
     // Committed: only now does the map learn what the store already reflects.
     for (const { id, doc } of changes) {
@@ -187,6 +248,8 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
       else lastServerState.set(id, doc)
     }
     if (batch.complete) sessionComplete = true
+    if (written.length > 0) tell(deps.onWrites, written)
+    tell(deps.onSnapshot, { fromCache: batch.fromCache, initialSyncCompletedAt: stamp })
   }
 
   // ── pushing ─────────────────────────────────────────────────────────────────────
@@ -248,13 +311,19 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
       const f = flight
       const result = await gateway.runPush(uid, f, (read) => decide(f, read))
       clock.clearTimeout(timer)
-      await exclusive(() =>
-        deps.store.runInTransaction(async (tx) => {
+      await section(async () => {
+        const writes = await deps.store.runInTransaction(async (tx) => {
           const local = { row: await tx.get(noteId), copyRow: await tx.get(f.copyId) }
           const view = sessionComplete ? (lastServerState.get(noteId) ?? null) : result.read.note
-          await applyWrites(tx, commitPush(f, result.action, local, view))
-        }),
-      )
+          const w = commitPush(f, result.action, local, view)
+          await applyWrites(tx, w)
+          return w
+        })
+        // Published before the section is released (rule 2), the redirect after its rows (rule 4).
+        if (writes.length > 0) tell(deps.onWrites, writes)
+        const to = redirectTarget(result.action, writes)
+        if (to !== null) tell(deps.onRedirect, { from: noteId, to })
+      })
       backoffMs = BACKOFF_MIN_MS // a success proves the transport; an armed retry is left alone
       return true
     } catch (error) {
@@ -282,11 +351,15 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
       subscribe()
       drain('auto')
     },
-    stop() {
+    async stop() {
       running = false
       unsubscribe?.()
       unsubscribe = null
       resetBackoff()
+      let bound: unknown = null
+      const timedOut = new Promise<void>((resolve) => (bound = clock.setTimeout(resolve, PUSH_TIMEOUT_MS)))
+      await Promise.race([Promise.allSettled([...inFlight.values()]).then(() => lastSection), timedOut])
+      clock.clearTimeout(bound)
     },
     wake() {
       drain('auto')

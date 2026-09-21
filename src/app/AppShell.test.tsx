@@ -1,14 +1,29 @@
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render, screen, waitFor } from '@testing-library/react'
-import { createCorpus } from '../sync/corpus'
 import { asNoteId } from '../domain/note'
 import userEvent from '@testing-library/user-event'
 import 'fake-indexeddb/auto'
 import { AppShell } from './AppShell'
 import { openIdbNoteStore } from '../store/idbNoteStore'
+import type { NoteStore } from '../store/noteStore'
+import { stubSession } from '../test/stubSession'
+import type { StubSession } from '../test/stubSession'
+import type { SessionStatus } from '../session'
 
-// AppShell opens `notemaker-local` via idb (real IndexedDB API, backed by fake-indexeddb in
-// jsdom). Each test gets a clean database.
+// Step 7: `App` hands AppShell a running session. Here that is a stub (no engine) over the real
+// `notemaker-local` IndexedDB database (fake-indexeddb in jsdom); tests that inspect the mirror
+// open a second connection to the same database.
+const connections: NoteStore[] = []
+async function renderShell(status: Partial<SessionStatus> = {}): Promise<StubSession> {
+  const store = await openIdbNoteStore('local')
+  connections.push(store)
+  const session = await stubSession('local', store, status)
+  render(<AppShell session={session} userEmail="me@example.com" onSignOut={() => {}} />)
+  return session
+}
+afterEach(() => {
+  for (const c of connections.splice(0)) c.close()
+})
 async function resetLocalDb(): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const req = indexedDB.deleteDatabase('notemaker-local')
@@ -37,13 +52,23 @@ describe('AppShell', () => {
     history.pushState(null, '', '/')
   })
 
-  it('shows the downloading state briefly, then settles to the genuinely-empty state', async () => {
-    render(<AppShell />)
-    await waitFor(() => expect(screen.getByText('No notes yet.')).toBeInTheDocument())
+  it('the first-load states follow the session: downloading, waiting for a connection, then genuinely empty', async () => {
+    const session = await renderShell({ initialSyncCompletedAt: null })
+    expect(await screen.findByText('Getting your notes…')).toBeInTheDocument()
+    act(() => session.setStatus({ waitingForConnection: true }))
+    expect(screen.getByText('Waiting for a connection.')).toBeInTheDocument()
+    expect(screen.queryByText('Getting your notes…')).not.toBeInTheDocument()
+    act(() => session.setStatus({ waitingForConnection: false, initialSyncCompletedAt: 5 }))
+    expect(screen.getByText('No notes yet.')).toBeInTheDocument()
+  })
+
+  it('a returning device (stamp already set) shows no loading state at all', async () => {
+    await renderShell({ initialSyncCompletedAt: 5 })
+    expect(screen.queryByText('Getting your notes…')).not.toBeInTheDocument()
   })
 
   it('creating a note opens it in the editor with a Default title and focuses the body', async () => {
-    render(<AppShell />)
+    await renderShell()
     await waitUntilReady()
     await userEvent.click(screen.getAllByRole('button', { name: 'New note' })[0]!)
     await waitFor(() => expect(screen.getByLabelText('Note body')).toBeInTheDocument())
@@ -51,7 +76,7 @@ describe('AppShell', () => {
   })
 
   it('typing a title latches it permanently, and the row reflects the saved title after a flush', async () => {
-    render(<AppShell />)
+    await renderShell()
     await waitUntilReady()
     await userEvent.click(screen.getAllByRole('button', { name: 'New note' })[0]!)
     await waitFor(() => expect(screen.getByLabelText('Note body')).toBeInTheDocument())
@@ -69,7 +94,7 @@ describe('AppShell', () => {
     // The order the test above does not exercise. Before the builder's step-6 fix, the body
     // handler's patch carried the corpus row's old title and titleIsCustom:false, replacing the
     // pending title patch — so the saved title became the derived "Later body text".
-    render(<AppShell />)
+    await renderShell()
     await waitUntilReady()
     await userEvent.click(screen.getAllByRole('button', { name: 'New note' })[0]!)
     await waitFor(() => expect(screen.getByLabelText('Note body')).toBeInTheDocument())
@@ -88,7 +113,7 @@ describe('AppShell', () => {
     // architecture.md: stamped by engine.ts on a complete server batch. Step 6 has no engine, so
     // the shell treats the local mirror as settled IN MEMORY for display, and persists nothing
     // that claims a server sync happened.
-    render(<AppShell />)
+    await renderShell()
     await waitUntilReady()
     const store = await openIdbNoteStore('local')
     try {
@@ -102,8 +127,7 @@ describe('AppShell', () => {
     // 02 / 05 §9, wired end to end through the shell. The Editor unit test proves the component
     // can preserve its state; this proves the shell does not throw it away (a remount, a key
     // change, or a pushState here would each pass every other test in this file).
-    const corpus = createCorpus()
-    render(<AppShell corpus={corpus} />)
+    const { corpus } = await renderShell()
     await waitUntilReady()
     await userEvent.click(screen.getAllByRole('button', { name: 'New note' })[0]!)
     await waitFor(() => expect(screen.getByLabelText('Note body')).toBeInTheDocument())
@@ -139,7 +163,7 @@ describe('AppShell', () => {
   })
 
   it('deleting a note moves it to Trash, and it can be restored', async () => {
-    render(<AppShell />)
+    await renderShell()
     await waitUntilReady()
     await userEvent.click(screen.getAllByRole('button', { name: 'New note' })[0]!)
     await waitFor(() => expect(screen.getByLabelText('Note body')).toBeInTheDocument())
@@ -160,7 +184,7 @@ describe('AppShell', () => {
   })
 
   it('search filters the list and shows the no-results empty state', async () => {
-    render(<AppShell />)
+    await renderShell()
     await waitUntilReady()
     await userEvent.click(screen.getAllByRole('button', { name: 'New note' })[0]!)
     await waitFor(() => expect(screen.getByLabelText('Note body')).toBeInTheDocument())
@@ -178,7 +202,7 @@ describe('AppShell', () => {
   // to Editor's mount lifecycle — so switching Notes before the 600ms timer fires must not lose
   // the abandoned Note's keystrokes even though its Editor instance unmounts underneath them.
   it('switching to a different Note mid-debounce still saves the Note left behind', async () => {
-    render(<AppShell />)
+    await renderShell()
     await waitUntilReady()
     await userEvent.click(screen.getAllByRole('button', { name: 'New note' })[0]!)
     await waitFor(() => expect(screen.getByLabelText('Note body')).toBeInTheDocument())
@@ -203,7 +227,7 @@ describe('AppShell', () => {
   })
 
   it('deleting immediately after typing keeps the just-typed text on the trashed row', async () => {
-    render(<AppShell />)
+    await renderShell()
     await waitUntilReady()
     await userEvent.click(screen.getAllByRole('button', { name: 'New note' })[0]!)
     await waitFor(() => expect(screen.getByLabelText('Note body')).toBeInTheDocument())
@@ -227,7 +251,7 @@ describe('AppShell', () => {
   })
 
   it('restoring, then typing immediately (mid-debounce), saves the post-restore edit', async () => {
-    render(<AppShell />)
+    await renderShell()
     await waitUntilReady()
     await userEvent.click(screen.getAllByRole('button', { name: 'New note' })[0]!)
     await waitFor(() => expect(screen.getByLabelText('Note body')).toBeInTheDocument())
@@ -265,7 +289,7 @@ describe('AppShell', () => {
   // 05-screens.md §5: the number shown in the Custom-emptied hint must be the number that
   // actually lands on save — never a guess independent of `nextUntitledN`.
   it('the Custom-emptied hint number matches the Default title the note actually saves as', async () => {
-    render(<AppShell />)
+    await renderShell()
     await waitUntilReady()
     await userEvent.click(screen.getAllByRole('button', { name: 'New note' })[0]!)
     await waitFor(() => expect(screen.getByLabelText('Note body')).toBeInTheDocument())
@@ -288,7 +312,7 @@ describe('AppShell', () => {
   // Lifecycle flush end-to-end (05-screens.md §4 + platform/lifecycle.ts): a window `blur` must
   // write a pending edit well before the 600ms debounce would have fired on its own.
   it('a window blur flushes a pending edit before the debounce timer fires', async () => {
-    render(<AppShell />)
+    await renderShell()
     await waitUntilReady()
     await userEvent.click(screen.getAllByRole('button', { name: 'New note' })[0]!)
     await waitFor(() => expect(screen.getByLabelText('Note body')).toBeInTheDocument())
@@ -311,7 +335,7 @@ describe('AppShell', () => {
 
   // Same lifecycle wiring, the `visibilitychange -> hidden` signal (Android backgrounding).
   it('visibilitychange to hidden flushes a pending edit before the debounce timer fires', async () => {
-    render(<AppShell />)
+    await renderShell()
     await waitUntilReady()
     await userEvent.click(screen.getAllByRole('button', { name: 'New note' })[0]!)
     await waitFor(() => expect(screen.getByLabelText('Note body')).toBeInTheDocument())

@@ -1,130 +1,85 @@
 // src/app/AppShell.tsx
-// 05-screens.md §1. The root component. Auth is step 7 (build brief): this shell opens straight
-// onto the list against a fixed local uid (`local`), so the IndexedDB database name is
-// `notemaker-local`. Step 7 swaps that constant for the signed-in uid and mounts `SignIn` in
-// front of this component — everything else here is unaffected.
+// 05-screens.md §1. The signed-in app. `App` gates on auth and hands this a running `Session`
+// (session.ts): the uid's open mirror, its corpus, the shared write lock and the engine's
+// triggers. This component never opens storage and reaches sync/ only through the corpus (ESLint).
 //
 // Breakpoint is a CSS media query (index.css), not JS state: both the list pane and the detail
 // pane are ALWAYS mounted, at every viewport width. On a narrow viewport, CSS hides whichever one
 // isn't the "current phone screen" (`.shell--note-open` / `.shell--list-open`, toggled by whether
 // a Note is open) — nothing under either pane is ever unmounted by a resize.
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { asNoteId, asRev } from '../domain/note'
 import type { NoteId } from '../domain/note'
 import { listView, trashView } from '../domain/projection'
 import { nextUntitledN } from '../domain/title'
-import { createCorpus } from '../sync/corpus'
-import type { Corpus, RedirectEvent } from '../sync/corpus'
-import { openIdbNoteStore } from '../store/idbNoteStore'
-import type { NoteStore } from '../store/noteStore'
-import { attachLifecycleFlush } from '../platform/lifecycle'
+import type { RedirectEvent } from '../sync/corpus'
+import type { Session } from '../session'
+import { attachLifecycleFlush, onBecameVisible } from '../platform/lifecycle'
 import { getAutoSync, setAutoSync as persistAutoSync } from '../platform/prefs'
 import { useCorpus } from './useCorpus'
 import { useNote } from './useNote'
 import { useOutboxCount } from './useOutboxCount'
 import { commitCreate, createSaveQueue } from './saveNote'
-import type { SaveNoteDeps, SaveQueue } from './saveNote'
-import { maybeSeed } from './devSeed'
+import type { SaveNoteDeps } from './saveNote'
 import { NoteList } from './NoteList'
 import type { EmptyStateKind } from './EmptyStates'
 import { Editor } from './Editor'
 import type { ConflictBanner } from './Editor'
 import { SyncStrip } from './SyncStrip'
 
-// Step 7 seam: replaced by the signed-in user's uid and email once auth lands.
-const LOCAL_UID = 'local'
-const PLACEHOLDER_USER_EMAIL = 'this device (not signed in yet)'
-
 const CONFLICT_TEXT =
   "This note was edited on another device too. You're still in your version — the other one is kept separately."
 
+/** The part of a Session the shell uses. */
+export type ShellSession = Pick<Session, 'store' | 'corpus' | 'status' | 'exclusive' | 'wake' | 'syncNow'>
+
 export interface AppShellProps {
-  /** The tab's corpus. Step 7's sync engine writes into this same instance (snapshots, and the
-   *  conflict redirect), so it is created by whoever wires the engine and passed in. Omitted at
-   *  step 6, where the shell is the only writer and makes its own. */
-  corpus?: Corpus
+  session: ShellSession
+  userEmail: string
+  /** Called once every typed change has reached the mirror. The caller closes the session, then
+   *  signs out (Designer's amendment 2: flush → close → signOut). */
+  onSignOut: () => void
 }
 
-export function AppShell({ corpus: injected }: AppShellProps = {}) {
-  // Lazy-initialized once, for the lifetime of this component. Not a ref: reading `.current`
-  // during render is disallowed (react-hooks/refs) — `useState`'s lazy initializer is the
-  // idiomatic way to create a single stable instance without one.
-  const [corpus] = useState(() => injected ?? createCorpus())
-  const saveDepsRef = useRef<SaveNoteDeps | null>(null)
-  const saveQueueRef = useRef<SaveQueue | null>(null)
+export function AppShell({ session, userEmail, onSignOut }: AppShellProps) {
+  const { corpus } = session
+  // One save path per mounted shell. `useState`'s lazy initializer, not a ref: reading `.current`
+  // during render is disallowed (react-hooks/refs).
+  const [saveDeps] = useState<SaveNoteDeps>(() => ({
+    store: session.store,
+    corpus,
+    exclusive: session.exclusive,
+    now: () => Date.now(),
+    mintRev: () => asRev(crypto.randomUUID()),
+    onCommitted: () => session.wake(),
+  }))
+  const [saveQueue] = useState(() => createSaveQueue(saveDeps))
+  useEffect(() => () => saveQueue.dispose(), [saveQueue])
 
   const [view, setView] = useState<'notes' | 'trash'>('notes')
   const [query, setQuery] = useState('')
   const [openId, setOpenId] = useState<NoteId | null>(null)
   const [switchToken, setSwitchToken] = useState(0)
+  /** Bumped when the open Note is re-seeded from a remote edit: the Editor remounts on it. */
+  const [seedToken, setSeedToken] = useState(0)
+  const [refocus, setRefocus] = useState<'body' | 'title' | null>(null)
   const [pendingFocusId, setPendingFocusId] = useState<NoteId | null>(null)
   const [autoSync, setAutoSyncState] = useState(getAutoSync)
   const [banner, setBanner] = useState<ConflictBanner | null>(null)
-  const [initialSyncCompletedAt, setInitialSyncCompletedAt] = useState<number | null>(null)
-  const [persistDenied, setPersistDenied] = useState(false)
-  const [bootFailed, setBootFailed] = useState(false)
-
-  // Boot: open the store, seed it (dev-only, opt-in — see devSeed.ts), load the mirror into the
-  // corpus, and read the meta keys this screen renders from.
-  useEffect(() => {
-    let cancelled = false
-    let storeHandle: NoteStore | null = null
-    void (async () => {
-      const store: NoteStore = await openIdbNoteStore(LOCAL_UID)
-      storeHandle = store
-      if (cancelled) {
-        store.close()
-        return
-      }
-      await maybeSeed(store)
-      const [rows, initialSync, persistGranted] = await Promise.all([
-        store.getAll(),
-        store.getMeta('initialSyncCompletedAt'),
-        store.getMeta('persistGranted'),
-      ])
-      if (cancelled) return
-      corpus.replaceAll(rows)
-      // `initialSyncCompletedAt` is written by ONE thing: sync/engine.ts, on a complete server batch
-      // (architecture.md). Step 6 has no engine and touches no network, so the local mirror is the
-      // whole truth and the shell treats it as settled — for display, IN MEMORY ONLY. Persisting a
-      // stamp here would record a server sync that never happened. (builder, step 6 review)
-      // Step 7 swap: delete the `?? Date.now()` fallback; the engine's stamp drives this.
-      setInitialSyncCompletedAt(initialSync ?? Date.now())
-      setPersistDenied(persistGranted === false)
-      const deps: SaveNoteDeps = {
-        store,
-        corpus,
-        now: () => Date.now(),
-        mintRev: () => asRev(crypto.randomUUID()),
-      }
-      saveDepsRef.current = deps
-      saveQueueRef.current = createSaveQueue(deps)
-    })().catch((err: unknown) => {
-      // The mirror could not be opened or read (IndexedDB disabled or blocked). Without this the
-      // rejection was unhandled and the shell showed "Getting your notes…" forever. Nothing was
-      // written, so nothing is lost; say so, terminally. (builder, step 6 — Frontend's review note)
-      console.error('AppShell: opening the local note storage failed', err)
-      if (!cancelled) setBootFailed(true)
-    })
-    return () => {
-      cancelled = true
-      // Closes the connection this effect opened so a test (or a real navigation away from the
-      // app) never leaves an IndexedDB handle open behind it — an open handle blocks a later
-      // `deleteDatabase`/version-upgrade indefinitely.
-      storeHandle?.close()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  const status = useSyncExternalStore(session.status.subscribe, session.status.getSnapshot)
 
   // Android backgrounds this app far more than it closes it — flush every pending debounce on
   // any of the three "the app might disappear now" signals.
-  useEffect(() => attachLifecycleFlush(() => saveQueueRef.current?.flush()), [])
+  useEffect(() => attachLifecycleFlush(() => saveQueue.flush()), [saveQueue])
+  // Architecture's push triggers: `visibilitychange → visible` wakes the Outbox.
+  useEffect(() => onBecameVisible(() => session.wake()), [session])
 
   // 05-screens.md §9: the redirect updates the URL via replaceState, never pushState, and does
-  // not touch the corpus a second time — `applyWrites` already delivered both rows this turn.
+  // not touch the corpus a second time — the engine already published both rows in its section.
   // Deliberately does NOT bump `switchToken`: Editor stays mounted through a redirect, which is
   // what lets its uncontrolled textarea preserve value/selection/scroll with no special-casing.
+  // The save queue re-keys its buffer itself (it subscribes to the same event).
   useEffect(
     () =>
       corpus.subscribeRedirect((event: RedirectEvent) => {
@@ -138,11 +93,16 @@ export function AppShell({ corpus: injected }: AppShellProps = {}) {
     [corpus],
   )
 
-  // Phone back-button support for the pushState navigations below.
+  // Phone back-button support for the pushState navigations below. A popstate is a navigation
+  // to a different Note, so it remounts the Editor exactly as a click does. Without the new
+  // `switchToken` the uncontrolled textarea kept the previous Note's text under the new Note's
+  // id, and the next keystroke wrote it there (found at step 7).
   useEffect(() => {
     function onPopState(event: PopStateEvent): void {
       const state = event.state as { noteId?: NoteId } | null
       setOpenId(state?.noteId ?? null)
+      setSwitchToken((t) => t + 1)
+      setPendingFocusId(null)
     }
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
@@ -152,21 +112,47 @@ export function AppShell({ corpus: injected }: AppShellProps = {}) {
   const pendingCount = useOutboxCount(corpus)
   const openNote = useNote(corpus, openId)
 
+  // 02 amendment 2026-09-21, rule 1a: `base` is the row the Editor seeded its fields from. A
+  // layout effect on the Editor's mount keys, reading the same `openNote` its defaultValue did.
+  useLayoutEffect(() => {
+    if (openNote !== undefined) saveQueue.seed(openNote)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saveQueue, switchToken, seedToken, openNote?.id])
+
+  // Rule 5 + UI/UX (05-screens, Editor): a remote edit to the open, idle Note re-seeds it
+  // silently, as a remount — caret and scroll to the top, focus kept in the field that had it.
+  // `reseed` refuses whenever anything the user typed is not yet in the mirror.
+  // A LAYOUT effect, not a passive one (mathematician's review, 2026-09-21): `reseed` moves the
+  // queue's base at once, so the remount must land in the same task. A passive effect left a gap
+  // where the old textarea's next keystroke committed the old text as an ordinary edit on the
+  // new base — a clean overwrite of the other device. Same shape as the step-6 focus race.
+  useLayoutEffect(() => {
+    if (openNote === undefined || !saveQueue.reseed(openNote.id)) return
+    const label = document.activeElement?.getAttribute('aria-label')
+    // Deliberately setState in an effect: the remount must follow a corpus change the queue has
+    // just judged safe, which only an effect over `openNote` can observe.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setRefocus(label === 'Note body' ? 'body' : label === 'Title' ? 'title' : null)
+    setSeedToken((t) => t + 1)
+  }, [saveQueue, openNote])
+
   const listRows = useMemo(() => listView(rows.values(), query), [rows, query])
   const trashRows = useMemo(() => trashView(rows.values()), [rows])
   const activeRows = view === 'notes' ? listRows : trashRows
 
   const untitledPreviewN = useMemo(() => nextUntitledN([...rows.values()].map((r) => r.title)), [rows])
 
-  // Selection is a pure function of initialSyncCompletedAt + corpus emptiness + query
-  // (05-screens.md §6) — computed once here over the whole corpus, not re-derived by NoteList.
+  // The four first-load states (03, 05-screens §6): downloading, downloading with no connection,
+  // genuinely empty, and — a returning device — none at all, because the stamp is already set.
   // Trash's own empty state (§8) is NOT part of this union; NoteList renders it locally.
   const emptyKind: Exclude<EmptyStateKind, 'signin-offline'> | null = useMemo(() => {
-    if (initialSyncCompletedAt === null) return 'downloading'
+    if (status.initialSyncCompletedAt === null) {
+      return status.waitingForConnection ? 'downloading-offline' : 'downloading'
+    }
     if (query.trim() !== '') return activeRows.length === 0 ? 'no-results' : null
     if (view === 'notes' && activeRows.length === 0) return 'empty'
     return null
-  }, [initialSyncCompletedAt, query, activeRows, view])
+  }, [status, query, activeRows, view])
 
   // Only the currently open Note's redirect banner is shown, and only until dismissed — a
   // dismissed banner must stay dismissed even though `conflictOf` remains true forever (§9).
@@ -179,52 +165,50 @@ export function AppShell({ corpus: injected }: AppShellProps = {}) {
   function navigateTo(id: NoteId | null, opts: { justCreated?: boolean } = {}): void {
     setOpenId(id)
     setSwitchToken((t) => t + 1)
+    setRefocus(null)
     setPendingFocusId(opts.justCreated === true && id !== null ? id : null)
     history.pushState({ noteId: id }, '')
   }
 
   function handleNewNote(): void {
-    const deps = saveDepsRef.current
-    if (deps === null) return
     void (async () => {
       const id = asNoteId(crypto.randomUUID())
       try {
-        const row = await commitCreate(deps, id, { title: '', titleIsCustom: false, body: '' })
+        const row = await commitCreate(saveDeps, id, { title: '', titleIsCustom: false, body: '' })
         setView('notes')
         navigateTo(row.id, { justCreated: true })
       } catch (err) {
-        // Same policy as the save queue's writeNow: a failed local write is loud in the console
-        // and never an unhandled rejection. Nothing was written, nothing is lost (the Note had no
-        // content yet), and the next tap retries. QA found this at step 6.
+        // Same policy as the save queue: a failed local write is loud in the console and never
+        // an unhandled rejection. Nothing was written, nothing is lost (the Note had no content
+        // yet), and the next tap retries. QA found this at step 6.
         console.error('AppShell: creating a Note in the local mirror failed', err)
       }
     })()
   }
 
-  // Every handler says ONLY what it changed. The save queue merges that onto the freshest
-  // content it knows of (pending patch → in-flight commit → live corpus row), so no handler can
-  // revert a field it didn't touch — not the title, and not the latch. See saveNote.ts.
+  // Every handler says ONLY what it changed. The save queue merges that into the open Note's
+  // buffer, so no handler can revert a field it didn't touch — not the title, and not the latch.
   function handleTitleInput(value: string): void {
-    if (openNote === undefined || saveQueueRef.current === null) return
+    if (openNote === undefined) return
     // Any keystroke here latches the title permanently — there is no escape hatch (05-screens §5).
-    saveQueueRef.current.schedule(openNote.id, { title: value, titleIsCustom: true })
+    saveQueue.schedule(openNote.id, { title: value, titleIsCustom: true })
   }
 
   function handleBodyInput(value: string): void {
-    if (openNote === undefined || saveQueueRef.current === null) return
-    saveQueueRef.current.schedule(openNote.id, { body: value })
+    if (openNote === undefined) return
+    saveQueue.schedule(openNote.id, { body: value })
   }
 
   function handleDelete(): void {
-    if (openNote === undefined || saveQueueRef.current === null) return
-    saveQueueRef.current.schedule(openNote.id, { deletedAt: Date.now() })
-    saveQueueRef.current.flush(openNote.id)
+    if (openNote === undefined) return
+    saveQueue.schedule(openNote.id, { deletedAt: Date.now() })
+    saveQueue.flush(openNote.id)
   }
 
   function handleRestore(): void {
-    if (openNote === undefined || saveQueueRef.current === null) return
-    saveQueueRef.current.schedule(openNote.id, { deletedAt: null })
-    saveQueueRef.current.flush(openNote.id)
+    if (openNote === undefined) return
+    saveQueue.schedule(openNote.id, { deletedAt: null })
+    saveQueue.flush(openNote.id)
   }
 
   function handleToggleTrash(): void {
@@ -233,25 +217,22 @@ export function AppShell({ corpus: injected }: AppShellProps = {}) {
   }
 
   function handleToggleAutoSync(): void {
-    setAutoSyncState((prev) => {
-      const next = !prev
-      persistAutoSync(next)
-      return next
-    })
+    const next = !autoSync
+    persistAutoSync(next)
+    setAutoSyncState(next)
+    // Turning it on: whatever waited in the Outbox goes now, not on the next edit.
+    if (next) session.wake()
   }
 
-  // No sync/engine.ts exists at step 6 (build brief's seam) — a harmless, honest no-op today.
+  // `Sync Now` means "send what I've written": the debounce is flushed into the mirror first.
   function handleSyncNow(): void {
-    /* step 7 seam */
+    saveQueue.flush()
+    void saveQueue.settled().then(() => session.syncNow())
   }
 
-  if (bootFailed) {
-    // Copy by builder, pending UI/UX review — 05-screens.md has no state for this.
-    return (
-      <div className="boot-failed" role="alert">
-        Can't open this device's note storage. Nothing has been changed — try reloading.
-      </div>
-    )
+  function handleSignOut(): void {
+    saveQueue.flush()
+    void saveQueue.settled().then(onSignOut)
   }
 
   return (
@@ -269,17 +250,15 @@ export function AppShell({ corpus: injected }: AppShellProps = {}) {
           onToggleAutoSync={handleToggleAutoSync}
           onSyncNow={handleSyncNow}
           onToggleTrash={handleToggleTrash}
-          userEmail={PLACEHOLDER_USER_EMAIL}
-          onSignOut={() => {
-            /* step 7 seam: no auth session exists yet to sign out of. */
-          }}
+          userEmail={userEmail}
+          onSignOut={handleSignOut}
           emptyKind={emptyKind}
         />
       </div>
       <div className="pane-detail">
         {openNote ? (
           <Editor
-            key={switchToken}
+            key={`${switchToken}:${seedToken}`}
             note={openNote}
             untitledPreviewN={untitledPreviewN}
             onTitleInput={handleTitleInput}
@@ -290,6 +269,7 @@ export function AppShell({ corpus: injected }: AppShellProps = {}) {
             banner={editorBanner}
             onDismissBanner={() => setBanner(null)}
             autoFocusBody={pendingFocusId === openNote.id}
+            refocus={refocus}
           />
         ) : (
           <div className="pick-a-note">Select a note, or write a new one.</div>
@@ -298,7 +278,7 @@ export function AppShell({ corpus: injected }: AppShellProps = {}) {
       <SyncStrip
         pendingCount={pendingCount}
         autoSync={autoSync}
-        persistDenied={persistDenied}
+        persistDenied={status.persistDenied}
         onSyncNow={handleSyncNow}
       />
     </div>

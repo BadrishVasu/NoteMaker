@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { asDeviceId, asNoteId, asRev } from './note'
 import type { ForkPoint, LocalNote, NoteDoc } from './note'
-import { beginPush, commitPush, decide } from './reconcile'
+import { beginPush, commitPush, decide, redirectTarget } from './reconcile'
 import type { Flight, PushAction } from './reconcile'
 import { buildConflictCopy } from './conflictCopy'
 
@@ -309,5 +309,40 @@ describe('commitPush — conflict copy and the Outbox-slot migration (02 defect 
       { op: 'delete', id: N },
       { op: 'put', row: cleanFrom(COPY, COPY_DOC) },
     ])
+  })
+})
+
+// 02, amendment 2026-09-21, rule 4 (mathematician): the editor follows this device's text to the
+// copy exactly when commitPush put a row at action.copyId — conflictCopy with `free`, typed or
+// not. No other outcome is a redirect.
+describe('redirectTarget — when a commit moves the open editor', () => {
+  const f = flight()
+  const COPY_DOC = buildConflictCopy(f)
+  const wrote: PushAction = { kind: 'conflictCopy', copyId: COPY, copy: COPY_DOC }
+  const superseded: PushAction = { kind: 'conflictCopy', copyId: COPY, copy: null }
+  const newer = cleanFrom(COPY, { ...COPY_DOC, rev: asRev('R6'), body: 'their edit of the copy' })
+  const target = (action: PushAction, local: { row: LocalNote; copyRow?: LocalNote }) =>
+    redirectTarget(action, commitPush(f, action, { row: local.row, copyRow: local.copyRow }, THEIRS))
+
+  it('conflict copy written, nothing typed → the copy', () => {
+    expect(target(wrote, { row: R2 })).toBe(COPY)
+  })
+
+  it('conflict copy written, typed during the flight (slot migrates) → the copy', () => {
+    expect(target(wrote, { row: TYPED })).toBe(COPY)
+  })
+
+  it('conflict copy written but the target is not free → no redirect, typed or not', () => {
+    expect(target(wrote, { row: R2, copyRow: newer })).toBeNull()
+    expect(target(wrote, { row: TYPED, copyRow: newer })).toBeNull()
+  })
+
+  it('superseded → no redirect', () => {
+    expect(target(superseded, { row: R2 })).toBeNull()
+    expect(target(superseded, { row: TYPED })).toBeNull()
+  })
+
+  it('every other outcome → no redirect', () => {
+    for (const action of [...LANDED_KINDS, ...ADOPT_KINDS]) expect(target(action, { row: R2 }), action.kind).toBeNull()
   })
 })

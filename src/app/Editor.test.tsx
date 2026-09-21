@@ -138,6 +138,16 @@ describe('Editor', () => {
     expect(screen.getByLabelText('Note body')).toHaveFocus()
   })
 
+  it('a re-seed remount keeps focus in the field that had it, caret at the start (UI/UX, step 7)', () => {
+    const { unmount } = render(<Editor {...baseProps({ note: makeRow({ body: 'their text' }), refocus: 'body' })} />)
+    const body = screen.getByLabelText('Note body') as HTMLTextAreaElement
+    expect(body).toHaveFocus()
+    expect(body.selectionStart).toBe(0)
+    unmount()
+    render(<Editor {...baseProps({ note: makeRow({ title: 'Custom', titleIsCustom: true }), refocus: 'title' })} />)
+    expect(screen.getByLabelText('Title')).toHaveFocus()
+  })
+
   it('does not steal focus for an existing note, even one with an empty body', () => {
     render(<Editor {...baseProps({ note: makeRow({ body: '' }), autoFocusBody: false })} />)
     expect(screen.getByLabelText('Note body')).not.toHaveFocus()

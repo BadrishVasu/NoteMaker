@@ -54,6 +54,20 @@ const IMPURE = {
     'needs is passed in as data.',
 }
 
+const AUTH = {
+  group: ['firebase/auth', 'firebase/auth/*'],
+  message:
+    'Only src/platform/firebase.ts and src/platform/auth.ts may import firebase/auth. The UI is ' +
+    'gated on auth state through platform/auth.ts, never on tokens (ticket 08).',
+}
+
+const SESSION = {
+  group: ['**/session'],
+  message:
+    'session.ts is the composition root (architecture.md, "Composition root"): main.tsx imports it, ' +
+    'app/ may import its types, and nothing below app/ may depend on it.',
+}
+
 const restrict = (...patterns) => ['error', { patterns }]
 
 export default tseslint.config(
@@ -82,14 +96,48 @@ export default tseslint.config(
   // Default for everything under src/.
   {
     files: ['src/**/*.{ts,tsx}'],
-    rules: { 'no-restricted-imports': restrict(FIRESTORE, FAKES) },
+    rules: { 'no-restricted-imports': restrict(FIRESTORE, FAKES, AUTH, SESSION) },
+  },
+
+  // app/ renders. It reaches sync/ only through corpus.ts, and session.ts only for its types
+  // (Designer, step 7). typescript-eslint's rule, because only it can exempt `import type`; the
+  // core rule below drops SESSION for app/ so it doesn't reject the type import first.
+  {
+    files: ['src/app/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': restrict(FIRESTORE, FAKES, AUTH),
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['**/sync/*', '!**/sync/corpus'],
+              message: 'app/ imports nothing from sync/ except corpus.ts. The engine is wired in session.ts.',
+            },
+            { ...SESSION, allowTypeImports: true },
+          ],
+        },
+      ],
+    },
+  },
+
+  // The composition root's one value importer.
+  {
+    files: ['src/main.tsx'],
+    rules: { 'no-restricted-imports': restrict(FIRESTORE, FAKES, AUTH) },
+  },
+
+  // The two sanctioned firebase/auth importers.
+  {
+    files: ['src/platform/firebase.ts', 'src/platform/auth.ts'],
+    rules: { 'no-restricted-imports': restrict(FIRESTORE, FAKES, SESSION) },
   },
 
   // domain/ is pure and reads no clock.
   {
     files: ['src/domain/**/*.ts'],
     rules: {
-      'no-restricted-imports': restrict(FIRESTORE, FAKES, IMPURE),
+      'no-restricted-imports': restrict(FIRESTORE, FAKES, IMPURE, SESSION),
       'no-restricted-properties': [
         'error',
         {
@@ -145,6 +193,6 @@ export default tseslint.config(
   // The one sanctioned firebase/firestore importer in the codebase.
   {
     files: ['src/sync/firestoreGateway.ts'],
-    rules: { 'no-restricted-imports': restrict(FAKES) },
+    rules: { 'no-restricted-imports': restrict(FAKES, AUTH, SESSION) },
   },
 )

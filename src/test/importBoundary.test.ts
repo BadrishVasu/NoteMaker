@@ -20,7 +20,8 @@ async function messagesFor(filePath: string, source: string): Promise<string[]> 
 }
 
 function hasRestrictedImport(messages: string[]): boolean {
-  return messages.some((m) => m.startsWith('no-restricted-imports'))
+  // The core rule, or typescript-eslint's (app/'s sync and session rules, which need allowTypeImports).
+  return messages.some((m) => m.startsWith('no-restricted-imports') || m.startsWith('@typescript-eslint/no-restricted-imports'))
 }
 
 /**
@@ -132,5 +133,47 @@ describe('sync/engine.ts consults no clock and never reads navigator.onLine', ()
   it('allows setTimeout outside engine.ts, where the real Clock is built', async () => {
     const messages = await messagesFor('src/platform/clock.ts', 'export const t = setTimeout(() => undefined, 1)\n')
     expect(restrictedGlobal(messages)).toBe(false)
+  })
+})
+
+// Step 7, the Designer's composition-root ruling (architecture.md, "Composition root"). Each
+// rejection has an allowed control beside it, so a rule that matches nothing cannot pass.
+describe('app/ reaches sync/ only through corpus.ts, and session.ts only as a type', () => {
+  it('rejects an engine import from app/, value or type', async () => {
+    expect(hasRestrictedImport(await messagesFor('src/app/AppShell.tsx', `import { createSyncEngine } from '../sync/engine'\nexport const x = createSyncEngine\n`))).toBe(true)
+    expect(hasRestrictedImport(await messagesFor('src/app/AppShell.tsx', `import type { SyncEngine } from '../sync/engine'\nexport type X = SyncEngine\n`))).toBe(true)
+  })
+
+  it('allows corpus.ts from app/', async () => {
+    expect(hasRestrictedImport(await messagesFor('src/app/AppShell.tsx', `import { createCorpus } from '../sync/corpus'\nexport const x = createCorpus\n`))).toBe(false)
+  })
+
+  it('rejects a value import of session.ts from app/, allows a type import', async () => {
+    expect(hasRestrictedImport(await messagesFor('src/app/App.tsx', `import { openSession } from '../session'\nexport const x = openSession\n`))).toBe(true)
+    expect(hasRestrictedImport(await messagesFor('src/app/App.tsx', `import type { Session } from '../session'\nexport type X = Session\n`))).toBe(false)
+  })
+
+  it('rejects session.ts from every layer below app/, even as a type', async () => {
+    for (const file of ['src/domain/note.ts', 'src/store/idbNoteStore.ts', 'src/sync/engine.ts', 'src/platform/auth.ts']) {
+      expect(hasRestrictedImport(await messagesFor(file, `import type { Session } from '../session'\nexport type X = Session\n`)), file).toBe(true)
+    }
+  })
+
+  it('allows main.tsx to import session.ts as a value', async () => {
+    expect(hasRestrictedImport(await messagesFor('src/main.tsx', `import { openSession } from './session'\nexport const x = openSession\n`))).toBe(false)
+  })
+})
+
+describe('firebase/auth is imported only by platform/firebase.ts and platform/auth.ts', () => {
+  it('rejects it from app/, sync/ and session.ts', async () => {
+    for (const file of ['src/app/App.tsx', 'src/sync/engine.ts', 'src/session.ts', 'src/sync/firestoreGateway.ts']) {
+      expect(hasRestrictedImport(await messagesFor(file, `import { signOut } from 'firebase/auth'\nexport const x = signOut\n`)), file).toBe(true)
+    }
+  })
+
+  it('allows it in the two sanctioned files', async () => {
+    for (const file of ['src/platform/firebase.ts', 'src/platform/auth.ts']) {
+      expect(hasRestrictedImport(await messagesFor(file, `import { signOut } from 'firebase/auth'\nexport const x = signOut\n`)), file).toBe(false)
+    }
   })
 })

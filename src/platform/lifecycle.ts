@@ -19,3 +19,12 @@ export function attachLifecycleFlush(flush: () => void): () => void {
     window.removeEventListener('pagehide', flush)
   }
 }
+
+/** `visibilitychange → visible`: one of the engine's wake sources (architecture, push triggers). */
+export function onBecameVisible(wake: () => void): () => void {
+  const onVisibilityChange = (): void => {
+    if (document.visibilityState === 'visible') wake()
+  }
+  document.addEventListener('visibilitychange', onVisibilityChange)
+  return () => document.removeEventListener('visibilitychange', onVisibilityChange)
+}

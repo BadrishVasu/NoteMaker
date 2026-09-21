@@ -1,4 +1,4 @@
-import { attachLifecycleFlush } from './lifecycle'
+import { attachLifecycleFlush, onBecameVisible } from './lifecycle'
 
 describe('attachLifecycleFlush', () => {
   it('calls flush on window blur', () => {
@@ -37,5 +37,21 @@ describe('attachLifecycleFlush', () => {
     window.dispatchEvent(new Event('blur'))
     window.dispatchEvent(new Event('pagehide'))
     expect(flush).not.toHaveBeenCalled()
+  })
+})
+
+describe('onBecameVisible', () => {
+  it('fires when the page becomes visible, not when it is hidden, until torn down', () => {
+    const wake = vi.fn()
+    const detach = onBecameVisible(wake)
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true })
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(wake).not.toHaveBeenCalled()
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(wake).toHaveBeenCalledTimes(1)
+    detach()
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(wake).toHaveBeenCalledTimes(1)
   })
 })

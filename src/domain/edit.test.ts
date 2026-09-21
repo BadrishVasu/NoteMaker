@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { asNoteId, asRev } from './note'
 import type { LocalNote } from './note'
-import { newLocalNote, recordEdit } from './edit'
+import { bufferEdit, newLocalNote, recordEdit, sameVisible } from './edit'
 
 /**
  * Entering the Outbox. 02: `pendingRev` is minted at edit time on every keystroke, in both
@@ -88,6 +88,70 @@ describe('newLocalNote', () => {
       baseRev: null,
       pendingRev: asRev('C1'),
       baseContent: null,
+    })
+  })
+})
+
+// 02, amendment 2026-09-21, rule 3 (mathematician): the editor buffer is a dirty row. An edit
+// commit applies onto the stored row only if that row still shows what the buffer was derived
+// from (`base`); otherwise the edit is concurrent and is recorded against `base`, so its push
+// conflicts instead of overwriting whatever the row now holds.
+describe('sameVisible — the fast-forward predicate', () => {
+  it('compares content and the null-ness of deletedAt, not revs or timestamps', () => {
+    expect(sameVisible(clean, { ...clean, rev: asRev('R9'), updatedAt: 9 } as LocalNote)).toBe(true)
+    expect(sameVisible(clean, { ...clean, deletedAt: 5 })).toBe(false)
+    expect(sameVisible({ ...clean, deletedAt: 4 }, { ...clean, deletedAt: 5 })).toBe(true)
+    expect(sameVisible(clean, { ...clean, body: 'x' })).toBe(false)
+    expect(sameVisible(clean, { ...clean, title: 'x' })).toBe(false)
+    expect(sameVisible(clean, { ...clean, titleIsCustom: false })).toBe(false)
+  })
+})
+
+describe('bufferEdit', () => {
+  const typed = { title: 'Groceries', titleIsCustom: true, body: 'base + typed', deletedAt: null }
+  const theirs: LocalNote = { ...clean, body: 'their edit', rev: asRev('S'), baseRev: asRev('S'), updatedAt: 5_000 }
+
+  it('stored row still shows the base → an ordinary edit onto the STORED row (its bookkeeping kept)', () => {
+    // e.g. our own push made it clean at a rev we wrote: the engine's baseRev must survive.
+    const stored = { ...clean, rev: asRev('P1'), baseRev: asRev('P1') }
+    const base = { ...clean, rev: asRev('P1'), baseRev: asRev('R1'), pendingRev: asRev('P1'), baseContent: { title: 'Groceries', titleIsCustom: true, body: 'older' } }
+    expect(bufferEdit(ID, stored, base, typed, asRev('P2'), 6_000)).toEqual(recordEdit(stored, typed, asRev('P2'), 6_000))
+  })
+
+  it('a fast-forward adopt (same content, new rev) is still ordinary — no spurious copy', () => {
+    const stored = { ...clean, rev: asRev('FF'), baseRev: asRev('FF') }
+    expect(bufferEdit(ID, stored, clean, typed, asRev('P2'), 6_000).baseRev).toBe(asRev('FF'))
+  })
+
+  it('stored row adopted underneath (other content) → concurrent: baseRev := base.rev, baseContent := base content', () => {
+    const next = bufferEdit(ID, theirs, clean, typed, asRev('P2'), 6_000)
+    expect(next).toMatchObject({
+      id: ID,
+      body: 'base + typed',
+      rev: asRev('P2'),
+      pendingRev: asRev('P2'),
+      baseRev: asRev('R1'),
+      baseContent: { title: 'Groceries', titleIsCustom: true, body: 'base' },
+    })
+  })
+
+  it('concurrent against a base the queue itself wrote (dirty): baseRev := that rev and its content', () => {
+    const ownCommit: LocalNote = { ...clean, body: 'T1', rev: asRev('T1'), pendingRev: asRev('T1'), baseContent: { title: 'Groceries', titleIsCustom: true, body: 'base' } }
+    const next = bufferEdit(ID, theirs, ownCommit, { ...typed, body: 'T1 more' }, asRev('P2'), 6_000)
+    expect(next).toMatchObject({ baseRev: asRev('T1'), pendingRev: asRev('P2'), baseContent: { body: 'T1' } })
+  })
+
+  it('a remote trash underneath is concurrent too: the tombstone is not silently undone', () => {
+    const trashed = { ...clean, deletedAt: 7, rev: asRev('S'), baseRev: asRev('S') }
+    expect(bufferEdit(ID, trashed, clean, typed, asRev('P2'), 6_000).baseRev).toBe(asRev('R1'))
+  })
+
+  it('stored row absent → recreated dirty against the base, never dropped', () => {
+    expect(bufferEdit(ID, undefined, clean, typed, asRev('P2'), 6_000)).toMatchObject({
+      id: ID,
+      body: 'base + typed',
+      baseRev: asRev('R1'),
+      pendingRev: asRev('P2'),
     })
   })
 })
