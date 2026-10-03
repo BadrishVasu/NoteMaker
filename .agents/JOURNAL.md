@@ -2,6 +2,35 @@
 
 Newest entry first. Append only.
 
+## 2026-10-03 (Day 8, close) — Badrish tested locally; pre-push gates green, range put to him
+**Worked:** builder
+
+**Moved:**
+- **Badrish fixed `.env.local` and tested step 7 locally: "All seems good."** He asked to push it
+  live to test properly.
+- **Pre-push gates on `67acccf`, the exact tree that would deploy:** 964 unit tests in 40 files,
+  74 emulator tests in 5 files, lint, typecheck and build green; working tree clean.
+- **Checked the production side before asking, so the deploy can't repeat the local failure.**
+  The deployed bundle's key is NOT the retired one (hash prefixes differ), Google accepts it with
+  both the `note-maker-f41.pages.dev` and `notemaker-claude.firebaseapp.com` referrers (the
+  handler-page trap in ticket 04), a bogus referrer is blocked — so the restriction is real, not
+  absent — and `note-maker-f41.pages.dev` is in the project's authorised domains. Nothing was
+  printed but hash prefixes and OK/ERROR.
+- **Range stated to Badrish for authorisation: `0532e87..67acccf`, 13 commits.** Nothing pushed:
+  his word covers one exact range and he has not named this one yet.
+
+**Open:**
+- His yes (or no) on `0532e87..67acccf`. After a push: prove the deploy from the commit's
+  check-runs, not from the live site's content.
+- Decisions carried to him: `persistentLocalCache` now or at ~500 Notes; the Mathematician's
+  lock-marker hook change (expire `.live.*` older than 24 h).
+- UI/UX to review the sign-in error-code line and fold it into 05-screens.md.
+- Still ahead: tickets 06 search, 12 back-button, 11 merge; real PWA icons; the >500 kB Firebase
+  chunk warning.
+
+**Badrish:** "I tested the app locally. All seems good. But we need to push it live to test it
+effectively. Anything else you have for me?"
+
 ## 2026-09-21 (Day 8, live test) — sign-in fails on localhost: `.env.local` holds the retired key
 **Worked:** builder
 
