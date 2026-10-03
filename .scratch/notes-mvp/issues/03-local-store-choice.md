@@ -282,3 +282,195 @@ one body-sized string per *dirty* row, in IndexedDB only, never on the wire.
 The sufficiency of the two capture points is reasoned, not model-checked, and is with the
 Mathematician. The field's presence is not in doubt, so the contract suite is not blocked on that
 answer.
+
+## Amendment, 2026-10-03 (`mathematician`, ratified by `designer`) — flip `persistentLocalCache` now; the tripwire is discharged
+
+Badrish reopened this on his own framing, and asked for it to be deduced rather than defaulted:
+*"I think a local storage for recently accessed and frequently accessed notes is a viable solution…
+The client wants to use the notes app for lists that are day-to-day, long running tasks that they
+update depending on the progress made, some journal type notes that they revisit as life happens.
+Think about cache or any other appropriate solutions."*
+
+### The reframing, first, because it changes which question is open
+
+**Recency and frequency cannot change what we STORE.** Ticket 06's search scans the whole mirror in
+memory, Trash reads it, and the offline promise is that every Note is readable and editable with no
+network. A "local storage for recently accessed notes" that holds less than the corpus breaks all
+three. The local footprint was never the cost: ~2 kB a Note, a few megabytes at any corpus this
+product will see.
+
+What recency and frequency *could* legitimately change is **what we re-validate against the server,
+and when**. So the only decision variable in this whole question is **the schedule and the scope of
+the full-collection subscription**. Every candidate below is a different answer to that one
+question, and nothing else about 03 moves.
+
+### Decision
+
+**Reverse to `initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentSingleTabManager() }) })`.**
+The mirror remains the single source of truth; the SDK cache is still never read by the app. Its
+entire purpose is the **resume token**.
+
+One rule comes with it, and it is not optional — see `architecture.md`, the 2026-10-03 amendment
+beside the from-cache paragraph: **the gateway drops the document content of from-cache batches
+delivered before this subscription's first `fromCache === false` snapshot.** Under
+`memoryLocalCache()` that batch was always empty and nobody had to think about it; under a
+persistent cache it is populated and may be arbitrarily stale relative to our mirror, and
+`applySnapshot` would walk clean rows backwards — visibly, and offline, until the next connection.
+Emitting `{ fromCache: true, complete: false, changes: [] }` from the gateway keeps the engine's
+observable batch sequence identical to the one 02's model was checked against. It is lossless
+because the complete batch is built from the full `snapshot.docs`. It must **not** be widened to all
+from-cache batches: a post-sync catch-up delivery can legitimately arrive from-cache carrying a real
+server update.
+
+### Why this and not the alternatives — eliminations, with the constraint that killed each
+
+The decisive property, and the one the alternatives all forfeit: **`persistentLocalCache` preserves
+the engine's completeness semantics exactly.** The gateway's first `fromCache === false` snapshot is
+still built from the full `snapshot.docs`, so the complete batch, the known-but-absent deletion
+rule, the `initialSyncCompletedAt` stamp and `lastServerState`-as-adopt-view are unchanged — only
+the *delta* is billed. Nothing in 02, nothing in the engine, needs re-reasoning. That is the whole
+argument in one sentence.
+
+- **Throttled full re-subscribe on memory cache** (open from the mirror, re-subscribe only if the
+  last sweep is older than T). *Eliminated: dominated.* At T = 30 min it is arithmetically identical
+  to `persistentLocalCache` and strictly worse in freshness; at T = 4 h it buys a ~1.7× improvement
+  over it and pays for that with up to four hours of staleness and a new code path. A scheme that is
+  the baseline plus staleness is not a scheme.
+- **`serverSeq: serverTimestamp()` watermark** (03's 2026-08-26 amendment). *Eliminated: cost/benefit
+  inverted.* It needs a tenth field in 01's **closed** allowlist, a rules change
+  (`request.resource.data.serverSeq == request.time`), and a model check of the `>=`-and-dedupe
+  claim — to buy the difference between "N per 30-minute gap" and "≈0". Against that it forfeits
+  removals permanently and, worse, *never produces a complete batch*: `sessionComplete` would be
+  false forever, the known-but-absent rule would never fire, and the mirror would never converge on
+  a deletion. Builder asked whether the removals objection dissolves now that nothing is
+  hard-deleted (13 is designed, not built). It does not. It is dissolved only *today*, and a
+  watermark is a permanent commitment; 13 lands a hard delete directly on top of it. The
+  completeness objection is the one that does not dissolve at all, and it is new on this pass.
+- **Hot-set subscription** — per-document listeners on the recently/frequently used Notes at open,
+  plus a periodic full sweep. This is Badrish's sentence taken literally, and it is the only
+  candidate that is genuinely *cheaper in principle*: `D·|hot| + s·N` versus `E·N`, which wins for
+  any corpus over roughly 150 Notes. *Eliminated, on three grounds.* (i) **Its worst case is worse
+  than the baseline it replaces** — a user whose hot set is their whole corpus pays `D·N`, i.e.
+  today's cost, with extra machinery on top. Badrish's own description (day-to-day lists revisited
+  constantly, long-running task notes, journals revisited as life happens) describes a workload
+  where the hot set *is* most of the corpus. (ii) It needs a fourth `meta` key, a second
+  subscription path in the gateway, and a partial-batch rule in `applyBatch` — which means the
+  known-but-absent deletion rule stops being derivable from `batch.complete`, and that rule is the
+  one 02's model actually checked. (iii) It is not foreclosed: it composes *on top of* a persistent
+  cache later, where the sweep is cheap too. So it is deferred, not refused, and nothing here makes
+  it harder to add.
+
+### The read cost, in the same terms as step 7's measurement
+
+Per device, per day, with N = corpus size:
+
+| | formula | at N = 500 |
+|---|---|---|
+| **Today** (`memoryLocalCache`) | `D·N + 2P`, D = cold opens = 20–50 | 10,000 – 25,000 |
+| **After** (`persistentLocalCache`) | `E·N + Δ + 2P` | ~3,000 – 6,000 |
+
+`E` = the number of opens whose previous live connection ended **more than 30 minutes ago**. This is
+the load-bearing number and it comes from Firestore's documented billing: *"If offline persistence
+is enabled and the listener is disconnected for more than 30 minutes … you will be charged for
+documents and index entries read as if you had issued a brand-new query."* Within the window, a
+resumed listen is billed only for what changed. `Δ` = documents changed by any device during
+connected time (tens per day). `2P` = the push transaction's two reads, unchanged.
+
+**So the saving is `D/E`, roughly 4–8× for a user whose opens cluster** — which is what Android's
+reap-and-relaunch cycle produces: 50 opens a day is not 50 separate visits, it is ~6–12 visits the
+OS chopped up.
+
+**Where it runs out — named, as every scheme must be.** The half-quota tripwire (25,000 reads/day)
+is **project-wide, not per user**: `N_max = 25,000 / (E · U)` for U concurrently active accounts. At
+E = 10 that is ~2,500 Notes on one account, ~830 across three. Today's equivalent is N ≈ 500 on one
+account. Three ways it fails:
+
+1. **Corpus past ~2,500 Notes** on a single account. Far beyond this workload; 03's existing
+   "re-examine at ~2,000 Notes" trigger already fires first.
+2. **More than a handful of concurrently active accounts** on the free tier.
+3. **A user whose opens do not cluster** — sporadic single opens spread across the day drive E → D
+   and the change buys nothing. *This is the honest worst case, and the saving is an empirical
+   property of the usage, not a guarantee.* It is also measurable: see the verification below.
+
+**The escape hatch nobody should be clever to avoid.** The Spark cap is an *availability* cliff —
+reads are refused for the rest of the day — not a bill. On Blaze, 25,000 reads/day is about
+**$0.22/month**. If any of the three bounds above is ever hit, enabling billing is the correct
+answer before a hot-set scheme is, and that should be said out loud rather than engineered around.
+
+### Verification — and an instrument that no longer works
+
+**`src/sync/readCost.emulator.test.ts` measures the regime we are leaving.** Under a persistent
+cache the complete batch still *carries* N documents while only Δ were *billed*, so "documents
+delivered" stops being a proxy for reads. The test should be retitled as the baseline it now is, or
+re-pointed at the resumed-listen case; it must not be read as a live cost measurement. **The real
+number comes off the Firebase console's usage graph after a day or two of real use.** The check is
+one division: reads/day ÷ N should land near E (≈6–12), not near D (20–50). If it lands near D,
+failure mode 3 has happened, and the hot-set scheme above is the next move.
+
+### Failure modes, walked
+
+- **A second browser profile.** The SDK cache is per profile, as is the mirror. It pays one cold N
+  and then behaves. Unchanged from today.
+- **A device offline for a month.** The resume token is long stale, so the reconnect is billed as a
+  brand-new query: one full N, a complete batch, removals delivered, the mirror converges. Correct,
+  and it is exactly the behaviour the watermark scheme could not provide.
+- **Two tabs.** `persistentSingleTabManager`: the second tab cannot take the persistent lease and
+  degrades to memory, i.e. to today's behaviour and today's cost, with **no correctness impact** —
+  our mirror is the source of truth, and 03's BroadcastChannel coherence is untouched.
+  `persistentMultipleTabManager` is a **dead end, not merely unchosen**: firebase-js-sdk #10410, a
+  new primary re-listening with a stale persisted resume token re-bills every listened query, which
+  destroys the exact saving this change exists to make.
+- **A purge (13) landing while a device is cold.** Inside 30 minutes the resumed stream delivers the
+  removal explicitly; beyond it, the full re-query produces a complete batch and the known-but-absent
+  rule deletes the row. Both paths correct. Cell 7 still protects a *dirty* row from being eaten.
+- **A user whose hot set is their whole corpus.** Costs `E·N` — the same as everyone else. This is
+  the case that eliminated the hot-set scheme and that this one is simply indifferent to.
+- **Eviction.** Browsers evict per origin, so the mirror and the SDK cache go together; there is no
+  state where one survives the other. Recovery works *only* because the complete batch is built from
+  `snapshot.docs` rather than `docChanges()` — now a named constraint in `architecture.md`.
+
+### Migration — none
+
+Step-7 devices hold a populated mirror and a stamped `initialSyncCompletedAt`. After the flip the
+SDK cache starts empty, so the first open delivers a full server-backed complete batch: *exactly
+today's behaviour*, reconciled row by row by `applySnapshot`. The stamp is untouched, no row shape
+changes, no data is rewritten. From the second open on, the resume token exists and the saving
+starts. **No migration code, and no first-run special case.**
+
+### What changes elsewhere
+
+- **01: nothing.** The closed nine-field allowlist stands; no field is added and the deployed rules
+  are untouched. This is the main reason this beat the watermark.
+- **02: nothing.** The engine's batch sequence is unchanged by construction (the drop happens in the
+  gateway), so the two snapshot rules and the adopt view need no re-check. Re-running the existing
+  suites is the whole verification obligation.
+- **`architecture.md`:** the from-cache amendment, plus the `snapshot.docs` constraint.
+- **07 (service worker): nothing.** The SW touches Cache Storage; Firestore uses IndexedDB. An
+  `autoUpdate` reload was an N-read event and is now near-free.
+- **08 / sign-out: nothing, deliberately.** Do **not** clear the SDK cache on sign-out.
+  `clearIndexedDbPersistence()` requires `terminate()` first, would delete the resume token this
+  change exists to create, and would leave the mirror it did not clear. Plaintext Notes at rest
+  after sign-out is a decision Badrish already made on 2026-08-25 (the per-uid mirror is retained);
+  this is the same bytes a second time, and it is unreachable in-app because the UI reads only the
+  mirror. A real "wipe this device" is 03's already-out-of-scope explicit clear-local-data action,
+  clearing both stores in one action.
+- **Disk footprint:** the corpus is now on disk twice, so 03's "re-examine at ~2,000 Notes **or**
+  ~20 MB" should be read origin-total — the megabyte half of that trigger now arrives at roughly
+  half the Note count. The Note-count half is unchanged. `navigator.storage.persist()` is granted
+  per *origin*, so the existing call already covers the SDK's databases; no new call.
+- **Code touch points, for Builder:** `src/sync/firestoreGateway.ts` (the cache setting, the comment
+  at :42 which states the old decision, and the drop rule in `subscribeNotes`),
+  `src/sync/firestoreGateway.writePath.test.ts:37` (its fixture source string imports
+  `memoryLocalCache`), `src/sync/readCost.emulator.test.ts` (header and `describe` title assert the
+  memory-cache premise).
+
+### Dead ends recorded, so nobody re-walks them
+
+- `persistentMultipleTabManager` — #10410, a stale persisted resume token re-bills every query.
+- Dropping **all** from-cache batches rather than only the pre-sync ones — loses real post-sync
+  catch-up updates.
+- Putting the drop inside `applyBatch` — adds a condition to the one function whose state space was
+  model-checked.
+- A hot-set scheme as a *replacement* for the full subscription — its worst case is the baseline,
+  and it breaks `batch.complete` as the source of the absence rule. As an *addition* on top of a
+  persistent cache it is still available and still cheap.

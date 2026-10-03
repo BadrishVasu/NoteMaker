@@ -1,5 +1,36 @@
 # Builder's notebook — NoteMaker
 
+## 2026-10-03 (Day 9) — two mutants survived, and both were my tests lying about what they proved
+
+The decision was the Mathematician's; the instructive part was mine. I wrote the emulator test for
+the drop rule, it went green, and the mutant run said: **it passes with the cache left on memory.**
+It was asserting the right shape in a world where the warm cache did not exist — the scenario it
+claimed to cover could not arise. A test whose setup silently fails to create its condition is
+indistinguishable from a passing test. Fixed by asserting the condition itself (a Firestore
+database is on disk), not only the consequence. **When a test depends on the environment being in
+a particular state, assert the state, not just the outcome.**
+
+The second survivor: widening the rule to every from-cache batch killed nothing, because the
+emulator cannot produce a post-complete from-cache delivery on demand. The fix was to stop buying
+that coverage from the environment and extract the rule as a pure function. **If an environment
+cannot produce a case on demand, that case belongs in a unit test** — otherwise the line between
+"covered" and "not reproducible here" quietly disappears.
+
+Also worth keeping:
+- I probed whether a persistent cache initialises under Node *before* designing the test around
+  it. It does, with fake-indexeddb. One throwaway probe changed the test design from "assert what
+  the docs say" to "prove it across two sessions". Its `console.log` was swallowed by the emulator
+  runner — encode a probe's result in an assertion to get output out of that config.
+- The ESLint boundary did its job somewhere I did not expect: tests cannot construct a
+  `memoryLocalCache` because they may not import firebase/firestore, so the opt-out became a plain
+  `memory` string. A boundary that is mildly inconvenient at the seam still beats an exception to it.
+- A failure mode I reasoned through rather than tested: if IndexedDB is unavailable (a private
+  window), a persistent cache could fail where the memory cache did not — but `session.ts` opens
+  the mirror *before* the engine starts, so that user hits `StorageError` first and never reaches
+  Firestore. The ordering is load-bearing; do not reorder it.
+- The scratchpad was cleared between sessions and took the mutation harness with it. Keep it small
+  enough that re-creating it is one cheap write, which it was.
+
 ## 2026-09-21 (Day 8, live test) — the credential I rotated around came back through a file I never listed
 
 Sign-in failed on Badrish's machine. The cause was the key he retired on 09-01, still sitting in

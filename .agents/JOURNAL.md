@@ -2,6 +2,53 @@
 
 Newest entry first. Append only.
 
+## 2026-10-03 (Day 9) — read cost deduced, not defaulted: persistent cache + the drop rule
+**Worked:** builder, mathematician (/deduce), designer
+
+**Moved:**
+- **Badrish refused the binary I offered** (leave it, or flip `persistentLocalCache`) and asked for
+  the problem to be solved from how the app is actually used — day-to-day lists, long-running task
+  notes, journals revisited as life happens — with the Mathematician on `/deduce`. He ran it and
+  pulled the Designer in directly; the decision is 03's **2026-10-03 amendment**, with the one code
+  rule it forces recorded in `architecture.md`.
+- **The answer is the switch, for different reasons, and not for free.** Persistent cache,
+  single-tab, for its resume token only; the mirror stays the one source of truth. The saving is
+  `D/E` ~ 4-8x — per *visit*, not per *launch*, because Firestore re-bills a full query past a
+  30-minute gap — and it is an empirical property of usage, checkable on the Firebase usage graph
+  after a couple of days live. **The hot-set scheme Badrish described was costed and deferred, not
+  dismissed:** cheaper on paper above ~150 Notes, but its worst case is a user whose hot set is
+  their whole corpus, which is exactly the user he described. No schema change, no rules change,
+  no migration; 01 and 02 untouched.
+- **Flipping it as a one-liner would have shipped a bug** — the defect the memory cache kept
+  latent: a pre-complete from-cache batch carries the SDK's own stale copy, and applying it walks
+  clean mirror rows backwards (offline, permanently). **The drop rule**: before this
+  subscription's first server-backed snapshot, the gateway emits that batch empty. Lossless,
+  because the complete batch is built from `snapshot.docs`. Deliberately not widened to later
+  from-cache deliveries, which carry real catch-up updates.
+- **Built test-first**: `mapSnapshot` extracted pure (`snapshotBatch.test.ts`), and
+  `persistentCache.emulator.test.ts` runs two sessions over one warm cache with the server moved
+  on between them. **Two of my first four mutants survived, and both were my tests' fault rather
+  than the decision's:** widening the rule was uncaught (the emulator cannot produce a
+  post-complete from-cache delivery on demand, so the rule is pinned by the pure test), and the
+  emulator test passed with the cache left on memory (it now asserts a Firestore database exists
+  on disk). 4/4 after. `readCost.emulator.test.ts` is retitled as the **baseline** and pinned to
+  `cache: memory`: documents delivered stopped being a proxy for documents billed at this amendment.
+- Gates: **968 unit tests in 41 files, 75 emulator tests in 6 files**, lint, typecheck, build green.
+
+**Open:**
+- **Push still unauthorised.** Badrish gave the intent ("we need to push it live") but never named
+  a range, and his rule is one exact range per authorisation. Nothing has gone to the remote.
+- The usage-graph check a couple of days after going live: does `E` sit at 6-12, or at 20-50.
+- Agent hook architecture: **not mine** — Claude is taking it to the Overseer.
+- UI/UX to review the sign-in error-code line; tickets 06, 12, 11; real PWA icons.
+
+**Badrish:** "I think a local storage for recently accessed and frequently accessed notes is a
+viable solution. Bring the mathematician in and use /deduce. The client wants to use the notes app
+for lists that are day-to-day, long running tasks that they update depending on the progress made,
+some journal type notes that they revisit as life happens. Think about cache or any other
+appropriate solutions." — and, on the hook architecture, that iterative patching "is not the right
+way to do things".
+
 ## 2026-10-03 (Day 8, close) — Badrish tested locally; pre-push gates green, range put to him
 **Worked:** builder
 

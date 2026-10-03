@@ -1,5 +1,72 @@
 # Mathematician — notebook
 
+## 2026-10-03 — NoteMaker, 03 read cost: Badrish's "cache for recent/frequent notes" (/deduce)
+
+Badrish refused the binary Builder put to him (leave it, or flip `persistentLocalCache`) and asked
+for the access pattern to be solved from. Ran `/deduce`. Full decision is in **03's 2026-10-03
+amendment**; `architecture.md` carries the one code rule it forces. Designer ratified A/B/C
+in one pass (his entry, same date). What follows is only what I would want to re-read.
+
+**The basis change that did the work.** "Local storage for recent/frequent notes" is unbuildable as
+stated — 06's search, Trash and the offline promise each require the *whole* corpus locally, and
+the footprint was never the cost anyway. Recency can only change *what we re-validate and when*.
+Once that is said, every candidate collapses to one variable: **the schedule and scope of the
+full-collection subscription.** Builder's framing was right and I told him so.
+
+**The fact that decided it, and that I had wrong going in.** `persistentLocalCache` is *not*
+"reads ≈ 0". Firestore's own pricing page: a listen resumed from a token more than 30 minutes old
+is billed as a brand-new query. So the unit of cost is not the open, it is the **usage episode** —
+`E·N` with E ≈ 6–12, not `D·N` with D = 20–50. Android's 50 opens/day are ~8 visits the OS chopped
+up, and the saving is exactly that clustering. Which means **the saving is empirical, not
+guaranteed**: a user who opens once an hour all day gets nothing. Booked as the one open question,
+checkable by dividing the console's reads/day by N.
+
+**The argument that eliminated everything else, in one line:** `persistentLocalCache` is the only
+candidate that preserves `batch.complete`. The first server-backed snapshot is still built from
+the full `snapshot.docs`, so the known-but-absent rule, the stamp and `lastServerState` are
+untouched and only the delta is billed. Every watermark or partial-subscription scheme kills
+completeness, and with it the mirror's convergence on deletions. Builder named completeness as the
+crux and he was right — it is the crux, and it is what *rules out* the clever options rather than
+needing to be redefined for them.
+
+**The defect I found, which is the only real work this creates.** Today `applyBatch` applies the
+content of from-cache batches, and that has never mattered because under memory cache the
+pre-complete from-cache batch is always *empty*. With a persistent cache it is populated and can be
+arbitrarily stale relative to our mirror → clean rows walk backwards, visibly, and offline they
+stay that way. The drop goes **in the gateway**, not in `applyBatch` (Designer's placement, and he
+is right: adding a condition to the model-checked function is the expensive way to be correct).
+It is lossless *because* the complete batch is `snapshot.docs`. Do not widen it to all from-cache
+batches — post-sync catch-up deliveries arrive from-cache with real updates.
+
+**On Builder's question about removals and ticket 13.** The "a filtered query never delivers
+removals" objection does dissolve *today* — nothing is hard-deleted. I did not let it carry,
+because a watermark is permanent and 13 lands a hard delete on top of it, and because a second,
+non-dissolving objection exists (no complete batch, ever). Worth remembering as a pattern: when an
+objection dissolves, look for the one underneath it before changing the answer.
+
+**The thing I nearly over-engineered.** The hot-set scheme is genuinely cheaper on paper
+(`D·|hot| + s·N` beats `E·N` above ~150 Notes) and it is literally what Badrish described. It dies
+on its worst case being *worse than the baseline* — and Badrish's own workload description
+(day-to-day lists, long-running task notes, journals revisited as life happens) is precisely a hot
+set that is most of the corpus. Also: the Spark cap is an availability cliff, and 25k reads/day on
+Blaze is ~$0.22/month. The engineering alternative to a one-line change was worth a quarter a
+month. Say that out loud before building anything.
+
+### Dead ends — do not re-walk
+- Throttled full re-subscribe on memory cache. At T = 30 min it is arithmetically identical to
+  `persistentLocalCache` with worse freshness; at T = 4 h it is ~1.7× better and four hours stale.
+- `serverSeq` watermark. Tenth field in 01's closed allowlist + rules change + model check, to buy
+  "≈0" over "N per 30-min gap", forfeiting removals *and* completeness.
+- Hot-set-only subscription (as a replacement). Worst case = baseline; breaks `batch.complete` as
+  the source of the absence rule. Still fine as an *addition* on top of the persistent cache.
+- `persistentMultipleTabManager`. firebase-js-sdk #10410: a new primary re-listens with a stale
+  persisted resume token and re-bills every query — the opposite of the point. Single-tab manager;
+  a second tab degrades to today's behaviour with no correctness impact.
+- Clearing the SDK cache on sign-out. `clearIndexedDbPersistence()` needs `terminate()` first, and
+  it would delete the resume token this change exists to create while leaving the mirror.
+- Reading `readCost.emulator.test.ts` as a live cost measurement after the flip. Documents
+  *delivered* stops being a proxy for documents *billed*; the number is on the console now.
+
 ## 2026-09-21 — NoteMaker, review of the built 02 amendment (Builder, Day 8)
 
 Reviewed the uncommitted working tree: `domain/edit.ts`, `app/saveNote.ts`, `AppShell.tsx`, and the

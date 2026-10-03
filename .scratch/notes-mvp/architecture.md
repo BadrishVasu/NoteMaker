@@ -61,6 +61,36 @@ arrived" is not evidence of anything. Three rules follow, all in `sync/engine.ts
   guard, run on the write path itself rather than on `toNoteDoc`'s output. A gateway failure
   retrying cannot fix is thrown as **`PermanentPushError`**; anything else is transient.
 
+**Amended 2026-10-03 (mathematician, ratified by the designer) — the gateway drops pre-sync
+cached content.** 03 has reversed to `persistentLocalCache`, so a from-cache batch is no longer
+always empty: at open the SDK now has its own copy of the corpus, and that copy can be arbitrarily
+stale relative to our mirror. Fed through `applySnapshot` it walks clean rows *backwards*, visibly,
+and offline it stays that way. The rule, and it lives in **`sync/firestoreGateway.ts`, not in the
+engine**:
+
+- **Before this subscription's first `fromCache === false` snapshot, `subscribeNotes` emits
+  `{ fromCache: true, complete: false, changes: [] }`** — byte-for-byte what it emitted under
+  `memoryLocalCache()`. So the engine's observable batch sequence is unchanged from the one 02's
+  model was checked against, `applyBatch` keeps its unconditional "apply every batch you are given"
+  contract, and no engine test moves. A condition added inside `applyBatch` would instead add state
+  to the one function whose space we paid to verify.
+- **It is lossless**, and this is a dependency, not a coincidence: the complete batch is built from
+  the full `snapshot.docs`, so it supersedes everything the dropped batches carried.
+- **Do not widen it to all from-cache batches.** After sync, a catch-up delivery can legitimately
+  arrive with `fromCache === true` carrying a real server update; dropping that loses the update
+  until the document next changes.
+- **The latch is per subscription, and that is required, not incidental.** `restartListener()`
+  resets `sessionComplete` and builds a new gateway closure with `complete = false`, so a reconnect
+  correctly re-opens the pre-sync window.
+- Premise, now load-bearing rather than idle: **the app never reads the SDK cache.** The mirror is
+  the source of truth; the SDK cache exists for its resume token.
+
+**Named constraint on the same boundary: the complete batch is built from `snapshot.docs`, never
+from `docChanges()`** (`firestoreGateway.ts:103`). Browsers evict per origin, so an eviction takes
+the mirror and the SDK cache together; a resumed listen into an empty mirror refills it *only*
+because the complete batch carries the whole collection. "Optimising" that line to `docChanges()`
+silently loses the user's corpus after an eviction.
+
 The fake
 implementation runs it against an in-memory `Map` with a hook that lets a test interleave a second
 device between the read and the write. **Ticket 09 gets its second device as a second engine

@@ -9,13 +9,16 @@ import { asRev } from '../domain/note'
 import type { SnapshotBatch } from './remoteGateway'
 import { createFirestoreGateway, openFirestore } from './firestoreGateway'
 
-// Step 7: measure the read cost per app open, don't inherit it (build brief). Ticket 03 chose
-// `memoryLocalCache()`, so no resume token survives a process: every open re-reads the whole
-// collection. Android reaps the app constantly (20–50 opens a day), so the number that matters is
-// documents delivered per cold open at a realistic corpus size. Firestore bills a listener one
-// read per document it returns; metadata-only snapshots (includeMetadataChanges) are not billed.
-// This counts what the server actually sends a fresh client, per open, and asserts it is N once —
-// not 2N from the metadata listener, and not N again on a reconnect inside the same process.
+// Step 7's read-cost measurement, and **now the BASELINE, not the live cost** (ticket 03's
+// 2026-10-03 amendment). It pins what a memory cache costs: no resume token survives the process,
+// so every cold open re-reads the whole collection — N documents, per open, for ever. That is the
+// number the amendment was argued against, and it is kept measured rather than remembered.
+//
+// It therefore pins `cache: 'memory'` explicitly. Do NOT read it as the shipped cost: production
+// runs a persistent cache, where the complete batch still CARRIES N documents (so documents
+// delivered stays N here) while Firestore bills only the delta for a reopen within ~30 minutes.
+// Documents delivered stopped being a proxy for documents billed at that amendment, and the
+// emulator cannot bill, so the live saving is checked on the Firebase usage graph instead.
 
 const PROJECT = 'demo-notemaker'
 const UID = 'u1'
@@ -32,7 +35,9 @@ const body = (i: number) => `Note ${i}\n` + 'A realistic paragraph of markdown t
 function coldOpen() {
   const app = initializeApp({ projectId: PROJECT }, `read-cost-${++seq}`)
   apps.push(app)
-  const gateway = createFirestoreGateway(openFirestore(app, { emulator: { host: HOST, port: Number(PORT), uid: UID } }))
+  const gateway = createFirestoreGateway(
+    openFirestore(app, { emulator: { host: HOST, port: Number(PORT), uid: UID }, cache: 'memory' }),
+  )
   const batches: SnapshotBatch[] = []
   const unsubscribe = gateway.subscribeNotes(UID, (b) => batches.push(b), () => undefined)
   const delivered = () => batches.reduce((n, b) => n + b.changes.length, 0)
@@ -71,7 +76,7 @@ afterAll(async () => {
   await env.cleanup()
 })
 
-describe(`read cost per cold open at ${CORPUS} Notes (memoryLocalCache)`, () => {
+describe(`BASELINE: read cost per cold open at ${CORPUS} Notes on a memory cache`, () => {
   it('a cold open receives every document exactly once: reads per open = corpus size', async () => {
     const open = coldOpen()
     await until('the complete batch', () => open.batches.some((b) => b.complete))
@@ -79,7 +84,7 @@ describe(`read cost per cold open at ${CORPUS} Notes (memoryLocalCache)`, () => 
     const complete = open.batches.find((b) => b.complete)!
     expect(complete.changes).toHaveLength(CORPUS)
     expect(open.delivered()).toBe(CORPUS)
-    console.info(`[read cost] cold open at ${CORPUS} Notes: ${open.delivered()} documents delivered in ${open.batches.length} batch(es)`)
+    console.info(`[read cost baseline] cold open at ${CORPUS} Notes: ${open.delivered()} documents delivered in ${open.batches.length} batch(es)`)
     open.unsubscribe()
   }, 60_000)
 

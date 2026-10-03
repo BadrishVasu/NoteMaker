@@ -252,6 +252,41 @@ Found while checking: the "app/ imports nothing from sync/ but corpus" rule was 
 
 Step-6 FYIs accepted without objection: Auto sync in localStorage via `platform/prefs.ts` (per-device is the right scope, and 03's `MetaShape` stays closed); `AppShell`'s injected `corpus` is the seam `Session` now fills.
 
+### 2026-10-03 — I ratified reversing 03 to `persistentLocalCache` (Mathematician's /deduce)
+
+Mathematician re-derived the read cost after step 7 measured N-per-open. I ratified the reversal to
+`persistentLocalCache({ tabManager: persistentSingleTabManager() })`. **My reason 1 flipped sign**:
+I wrote "its entire remaining value is the resume token" as an argument against paying for a second
+copy; the resume token is now the measured need, so the same sentence is the argument for. Reason 2
+(blast radius of a stray `setDoc` surviving a restart) is a real loss and I accepted it — the
+defences that matter (ESLint import boundary, `firestoreGateway.writePath.test.ts`, 09's no-`setDoc`
+test) are *static*, they fail CI before anything ships; memory cache only shortened the window after
+a shipped mistake. Reason 3 dies to the single-tab manager.
+
+**`persistentMultipleTabManager` is a dead end — do not adopt.** firebase-js-sdk #10410: a new
+primary tab re-listens with a stale persisted resume token and re-bills the whole query, i.e. it
+destroys the exact saving we are making the change for. Single tab; a second tab degrades to
+today's memory behaviour, which is correct because our mirror is the source of truth.
+
+**The new rule this forces** (architecture-level, not 03's): a from-cache batch delivered *before*
+this session's first `fromCache === false` snapshot has its document content dropped; it survives
+only as the "waiting for a connection" signal. Today those batches are always empty, so with a
+persistent cache they become populated-and-arbitrarily-stale and `applySnapshot` would walk clean
+rows backwards. I put the drop **in the gateway**, where the `complete` latch already lives, not in
+the engine — that way the engine sees exactly the batch sequence 02's model was checked against and
+its state space is literally unchanged. Must NOT be widened to all from-cache batches: a post-sync
+catch-up delivery can legitimately be from-cache and dropping it loses a real server update.
+
+Checked for C and found no breakage: 07 has no `runtimeCaching` and Firestore lives in the window,
+not the SW scope; `navigator.storage.persist()` is origin-wide so it already covers the SDK's own
+IndexedDB (footprint roughly doubles — read 03's "~20 MB mirror" re-examine line as origin-total);
+sign-out does **not** clear the SDK cache and should not start to — Badrish already ruled local
+Notes survive sign-out, and `clearIndexedDbPersistence()` would need `terminate()` first and would
+delete the very resume token we are adding. Eviction is per-origin, so mirror and SDK cache go
+together; and even if they did not, the complete batch is built from the full `snapshot.docs`
+(`firestoreGateway.ts`), so an empty mirror refills. That last fact is load-bearing — if anyone
+ever "optimises" the complete batch to use `docChanges()`, an evicted mirror never refills.
+
 ### Testable seams I named for the Builder and for ticket 09
 
 `NoteStore` port (contract suite run against a fake and against `idb` — this is how 09 gets a second

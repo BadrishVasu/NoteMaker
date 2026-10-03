@@ -95,6 +95,42 @@ Full reasoning lives on ticket 03; the constraints that forced each, in one line
   id, and a mix-up would typecheck and fail as a wrong equality inside the reconcile. Reversal is
   three lines — designer — 2026-09-01
 
+- **`persistentLocalCache({ tabManager: persistentSingleTabManager() })` replaces
+  `memoryLocalCache()`, and 03's tripwire is discharged** — Badrish reopened the read-cost question
+  on 2026-10-03 asking for a recency/frequency local store; deduced in
+  [03's 2026-10-03 amendment](../../.scratch/notes-mvp/issues/03-local-store-choice.md). The mirror
+  must hold every Note regardless (06's search, Trash, the offline promise), so recency can only
+  change *what we re-validate and when* — i.e. the schedule and scope of the full-collection
+  subscription, nothing else. `persistentLocalCache` wins because it is the only candidate that
+  **preserves the engine's completeness semantics exactly**: the first `fromCache === false`
+  snapshot is still built from the full `snapshot.docs`, so `batch.complete`, the known-but-absent
+  rule and `lastServerState` are unchanged and only the delta is billed. Cost goes from `D·N + 2P`
+  (D = 20–50 opens) to `E·N + Δ + 2P`, where E ≈ 6–12 is *usage episodes separated by >30 min*
+  (Firestore's documented resume-token billing rule) — a 4–8× saving, half-quota tripwire moving
+  from N ≈ 500 to `25,000/(E·U)` ≈ 2,500 Notes on one account, **project-wide across U accounts**.
+  No schema change, no rules change, no migration — mathematician, ratified by designer —
+  2026-10-03
+- **The gateway drops the document content of from-cache batches delivered before this
+  subscription's first server-backed snapshot** — forced by the flip: that batch used to be empty
+  and is now a populated, possibly stale SDK copy that `applySnapshot` would use to walk clean rows
+  backwards. Implemented in `firestoreGateway.subscribeNotes`, **not** in `applyBatch`, so the
+  engine's observable batch sequence is identical to the one 02's model was checked against.
+  Lossless because the complete batch carries the full `snapshot.docs`. Not to be widened to all
+  from-cache batches — a post-sync catch-up delivery can carry a real update. Written in
+  `architecture.md` — mathematician/designer — 2026-10-03
+- **The complete batch is built from `snapshot.docs`, never `docChanges()`, and that is now a named
+  constraint** (`firestoreGateway.ts:103`). Eviction is per origin and takes the mirror and the SDK
+  cache together; this line is the only reason an evicted mirror refills — designer — 2026-10-03
+- **Rejected on this pass, with reasons, so they are not re-proposed:** the `serverSeq` watermark
+  (a tenth field in 01's closed allowlist + a rules change + a model check, to buy "≈0" over "N per
+  30-min gap", while forfeiting removals *and* never producing a complete batch — so the mirror
+  never converges on a deletion); a throttled full re-subscribe on memory cache (dominated — it is
+  this decision plus staleness); a hot-set-only subscription (its worst case, a hot set that is the
+  whole corpus, is *worse* than the baseline, and it breaks `batch.complete` as the source of the
+  absence rule — deferred, not refused: it composes on top of a persistent cache later);
+  `persistentMultipleTabManager` (firebase-js-sdk #10410 re-bills every query from a stale persisted
+  resume token) — mathematician — 2026-10-03
+
 ## Open questions
 - ~~Is the enforced `baseContent` biconditional the right predicate?~~ **Answered: yes, exactly**
   — mathematician, 02 appendix 3, 2026-09-06. Implied by the corrected capture rule, neither
@@ -105,6 +141,10 @@ Full reasoning lives on ticket 03; the constraints that forced each, in one line
   engine-level property and is booked at step 3 on `sync-engine.md`, not here. The function's doc
   comment now says so, so nobody reads its presence as coverage. Closed.
 - Growth story past ~2,000 Notes / ~20 MB — deferred to the map's "Not yet specified"
-- ~~Read cost per app open under Android's constant background/reap cycle~~ — **measured**, see
-  State: reads per open = N. Whether to flip `persistentLocalCache` now is Badrish's call on how
-  many Notes he expects to keep; the recommendation is to flip it before ~500 Notes.
+- ~~Read cost per app open under Android's constant background/reap cycle~~ — **measured, then
+  decided**: `persistentLocalCache` is in, see the Decisions block and 03's 2026-10-03 amendment.
+  Closed.
+- **Open, and only answerable in production:** whether this user's opens actually cluster. The
+  whole 4–8× saving is `D/E`, and E is empirical. After a day or two of real use, divide the
+  Firebase console's reads/day by the corpus size: near 6–12 means it worked, near 20–50 means it
+  did not and the hot-set scheme is the next move. Owner: Builder, after the first live days.
